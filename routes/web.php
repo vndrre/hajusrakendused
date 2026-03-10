@@ -1,0 +1,26 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use Laravel\Fortify\Features;
+
+Route::inertia('/', 'Welcome', [
+    'canRegister' => Features::enabled(Features::registration()),
+])->name('home');
+
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+
+    Route::get('weather', [App\Http\Controllers\WeatherController::class, 'show'])->name('weather.show');
+    Route::get('api/weather', [App\Http\Controllers\WeatherController::class, 'api'])->name('weather.api');
+    Route::get('map', [App\Http\Controllers\MarkerController::class, 'index'])->name('map.index');
+
+    Route::prefix('api/markers')->group(function () {
+        Route::get('/', [App\Http\Controllers\MarkerController::class, 'apiIndex'])->name('markers.api.index');
+        Route::post('/', [App\Http\Controllers\MarkerController::class, 'store'])->name('markers.store');
+        Route::get('/{marker}', [App\Http\Controllers\MarkerController::class, 'show'])->name('markers.show');
+        Route::put('/{marker}', [App\Http\Controllers\MarkerController::class, 'update'])->name('markers.update');
+        Route::delete('/{marker}', [App\Http\Controllers\MarkerController::class, 'destroy'])->name('markers.destroy');
+    });
+});
+
+require __DIR__.'/settings.php';
