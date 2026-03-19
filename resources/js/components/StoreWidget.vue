@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import axios from 'axios';
-import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ShoppingCart } from 'lucide-vue-next';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 interface StoreProduct {
     id: number;

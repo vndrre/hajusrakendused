@@ -1,6 +1,6 @@
 <script setup lang="ts">
-    import { ref, onMounted } from 'vue';
     import axios from 'axios';
+    import { ref, onMounted } from 'vue';
 
     interface WeatherData {
         name: string;

@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
-import PlaceholderPattern from '@/components/PlaceholderPattern.vue';
-import WeatherWidget from '@/components/WeatherWidget.vue';
-import MapWidget from '@/components/MapWidget.vue';
+import { Head } from '@inertiajs/vue3';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { dashboard } from '@/routes';
 import type { BreadcrumbItem } from '@/types';

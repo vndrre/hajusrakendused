@@ -23,7 +23,7 @@ interface Post {
     comments: Comment[];
 }
 
-const props = defineProps<{
+const { posts, authUser } = defineProps<{
     posts: Post[];
     authUser: User | null;
 }>();
