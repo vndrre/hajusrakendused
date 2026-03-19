@@ -2,11 +2,32 @@
     import { ref, onMounted } from 'vue';
     import axios from 'axios';
 
+    interface WeatherData {
+        name: string;
+        sys: { country: string };
+        weather: Array<{ icon: string; description: string }>;
+        main: { temp: number; feels_like: number; humidity: number };
+        wind: { speed: number };
+        clouds?: { all: number };
+    }
+
     const searchCity = ref('Tallinn');
     const searchCountry = ref('EE');
-    const weather = ref(null);
+    const weather = ref<WeatherData | null>(null);
     const loading = ref(false);
     const error = ref('');
+    const countryOptions = [
+        { code: 'EE', name: 'Estonia' },
+        { code: 'FI', name: 'Finland' },
+        { code: 'SE', name: 'Sweden' },
+        { code: 'LV', name: 'Latvia' },
+        { code: 'LT', name: 'Lithuania' },
+        { code: 'PL', name: 'Poland' },
+        { code: 'DE', name: 'Germany' },
+        { code: 'GB', name: 'United Kingdom' },
+        { code: 'US', name: 'United States' },
+        { code: 'JP', name: 'Japan' },
+    ];
 
     const fetchWeather = async (city: string, country: string) => {
         loading.value = true;
@@ -37,82 +58,113 @@
 </script>
 
 <template>
-    <div class="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md w-full h-full">
-        <h2 class="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Weather Service</h2>
+    <div class="relative h-full w-full overflow-hidden rounded-3xl border border-zinc-200 bg-zinc-100 p-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+        <div
+            class="h-full rounded-[calc(theme(borderRadius.3xl)-2px)] bg-white p-6 dark:bg-zinc-950"
+        >
+            <div class="mb-6 flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500 dark:text-zinc-400">Live weather</p>
+                    <h2 class="text-2xl font-bold text-zinc-900 dark:text-white">Forecast Overview</h2>
+                </div>
+                <div class="hidden rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 sm:block">
+                    OpenWeather
+                </div>
+            </div>
 
-        <div class="mb-4">
-            <form @submit.prevent="searchWeather" class="flex gap-2">
+            <form @submit.prevent="searchWeather" class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto]">
                 <input
                     v-model="searchCity"
                     type="text"
-                    placeholder="Insert city (for example: Tallinn)"
-                    class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    placeholder="City (for example: Tallinn)"
+                    class="w-full rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm text-zinc-900 shadow-sm transition focus:border-zinc-400 focus:outline-none focus:ring-4 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:focus:border-zinc-500 dark:focus:ring-zinc-500/30"
                 />
-                <input
+                <select
                     v-model="searchCountry"
-                    type="text"
-                    placeholder="Riik (nt EE)"
-                    class="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                />
+                    class="w-full rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm text-zinc-900 shadow-sm transition focus:border-zinc-400 focus:outline-none focus:ring-4 focus:ring-zinc-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white dark:focus:border-zinc-500 dark:focus:ring-zinc-500/30 sm:w-52"
+                >
+                    <option
+                        v-for="country in countryOptions"
+                        :key="country.code"
+                        :value="country.code"
+                    >
+                        {{ country.name }} ({{ country.code }})
+                    </option>
+                </select>
                 <button
                     type="submit"
                     :disabled="loading"
-                    class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 cursor-pointer"
+                    class="cursor-pointer rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-zinc-900/20 transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
                 >
                     Search
                 </button>
             </form>
-        </div>
 
-        <div v-if="loading" class="text-center py-4">
-            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
-        </div>
-
-        <div v-else-if="error" class="text-red-500 text-center py-4">
-            {{ error }}
-        </div>
-
-        <div v-else-if="weather" class="text-center flex gap-5">
-            <div class="flex items-center justify-center mb-4">
-                <img
-                    :src="`https://openweathermap.org/img/wn/${weather.weather[0].icon}@2x.png`"
-                    :alt="weather.weather[0].description"
-                    class="w-16 h-16"
-                />
-            </div>
-            <div class="grid grid-cols-1 gap-2">
-                <h3 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                    {{ weather.name }}, {{ weather.sys.country }}
-                </h3>
-
-                <div class="text-lg font-medium text-gray-900 dark:text-white">
-                    {{ weather.weather[0].description }}
-                </div>
+            <div v-if="loading" class="flex min-h-52 items-center justify-center">
+                <div class="h-10 w-10 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-zinc-100"></div>
             </div>
 
+            <div v-else-if="error" class="rounded-2xl border border-zinc-300 bg-zinc-100 p-4 text-center text-sm font-medium text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+                {{ error }}
+            </div>
 
-            <div class="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                    <span class="font-semibold">Temperature:</span>
-                    {{ Math.round(weather.main.temp) }}°C
+            <div v-else-if="weather" class="space-y-6">
+                <div class="flex flex-col gap-4 rounded-2xl bg-zinc-100 p-4 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="rounded-2xl bg-white p-2 shadow-sm dark:bg-zinc-950">
+                            <img
+                                :src="`https://openweathermap.org/img/wn/${weather.weather[0].icon}@2x.png`"
+                                :alt="weather.weather[0].description"
+                                class="h-14 w-14"
+                            />
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold text-zinc-900 dark:text-white">
+                                {{ weather.name }}, {{ weather.sys.country }}
+                            </h3>
+                            <p class="text-sm capitalize text-zinc-500 dark:text-zinc-300">
+                                {{ weather.weather[0].description }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="text-left sm:text-right">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Current temp</p>
+                        <p class="text-3xl font-bold text-zinc-900 dark:text-white">{{ Math.round(weather.main.temp) }}°C</p>
+                    </div>
                 </div>
-                <div>
-                    <span class="font-semibold">Feels Like:</span>
-                    {{ Math.round(weather.main.feels_like) }}°C
-                </div>
-                <div>
-                    <span class="font-semibold">Humidity:</span>
-                    {{ weather.main.humidity }}%
-                </div>
-                <div>
-                    <span class="font-semibold">Wind:</span>
-                    {{ weather.wind.speed }} m/s
+
+                <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <div class="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Feels like</p>
+                        <p class="mt-1 text-lg font-semibold text-zinc-900 dark:text-white">
+                            {{ Math.round(weather.main.feels_like) }}°C
+                        </p>
+                    </div>
+                    <div class="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Humidity</p>
+                        <p class="mt-1 text-lg font-semibold text-zinc-900 dark:text-white">
+                            {{ weather.main.humidity }}%
+                        </p>
+                    </div>
+                    <div class="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Wind</p>
+                        <p class="mt-1 text-lg font-semibold text-zinc-900 dark:text-white">
+                            {{ weather.wind.speed }} m/s
+                        </p>
+                    </div>
+                    <div class="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Clouds</p>
+                        <p class="mt-1 text-lg font-semibold text-zinc-900 dark:text-white">
+                            {{ weather.clouds?.all ?? 0 }}%
+                        </p>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <div v-else class="text-center py-4 text-gray-500 dark:text-gray-400">
-            Insert city, to see weather information
+            <div v-else class="rounded-2xl border border-dashed border-zinc-300 bg-zinc-100 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                Insert city, to see weather information
+            </div>
         </div>
     </div>
 </template>

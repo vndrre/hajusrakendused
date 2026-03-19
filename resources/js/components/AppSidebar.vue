@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { BookOpen, FolderGit2, LayoutGrid, MessageCircle } from 'lucide-vue-next';
+import {
+    BookOpen,
+    CloudSun,
+    FolderGit2,
+    LayoutGrid,
+    MapPinned,
+    MessageCircle,
+    ShoppingCart,
+} from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -24,10 +32,25 @@ const mainNavItems: NavItem[] = [
         icon: LayoutGrid,
     },
     {
+        title: 'Weather',
+        href: '/weather',
+        icon: CloudSun,
+    },
+    {
+        title: 'Map',
+        href: '/map',
+        icon: MapPinned,
+    },
+    {
         title: 'Blog',
         href: '/blog',
         icon: MessageCircle,
     },
+    {
+        title: 'Store',
+        href: '/store',
+        icon: ShoppingCart,
+    }
 ];
 
 const footerNavItems: NavItem[] = [

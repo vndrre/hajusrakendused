@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted, nextTick, onBeforeUnmount } from 'vue';
 import axios from 'axios';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 interface Marker {
     id: number;
     name: string;
-    latitude: number;
-    longitude: number;
+    latitude: number | string;
+    longitude: number | string;
     description?: string;
     added: string;
     edited?: string;
@@ -25,41 +27,7 @@ const newMarker = ref({
 });
 
 const mapMarkers = ref<any[]>([]);
-
-const loadLeaflet = (): Promise<void> => {
-    return new Promise((resolve, reject) => {
-        if ((window as any).L) {
-            resolve();
-            return;
-        }
-
-        const existingScript = document.querySelector<HTMLScriptElement>(
-            'script[data-leaflet="true"]',
-        );
-        if (existingScript && (window as any).L) {
-            resolve();
-            return;
-        }
-
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-        link.integrity =
-            'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
-        link.crossOrigin = '';
-        document.head.appendChild(link);
-
-        const script = document.createElement('script');
-        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-        script.async = true;
-        script.defer = true;
-        script.setAttribute('data-leaflet', 'true');
-        script.onload = () => resolve();
-        script.onerror = () =>
-            reject(new Error('Leaflet failed to load from CDN'));
-        document.head.appendChild(script);
-    });
-};
+const toCoordinate = (value: number | string): number => Number(value) || 0;
 
 const initMap = async () => {
     if (!mapContainer.value) {
@@ -67,9 +35,6 @@ const initMap = async () => {
     }
 
     try {
-        await loadLeaflet();
-        const L = (window as any).L;
-
         map.value = L.map(mapContainer.value).setView([59.437, 24.7536], 10);
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -84,6 +49,10 @@ const initMap = async () => {
             }
         });
 
+        setTimeout(() => {
+            map.value?.invalidateSize();
+        }, 0);
+
         await loadMarkers();
     } catch (error) {
         console.error('Error initializing map:', error);
@@ -93,7 +62,11 @@ const initMap = async () => {
 const loadMarkers = async () => {
     try {
         const response = await axios.get('/api/markers');
-        markers.value = response.data;
+        markers.value = response.data.map((marker: Marker) => ({
+            ...marker,
+            latitude: toCoordinate(marker.latitude),
+            longitude: toCoordinate(marker.longitude),
+        }));
         updateMapMarkers();
     } catch (error) {
         console.error('Error loading markers:', error);
@@ -101,8 +74,6 @@ const loadMarkers = async () => {
 };
 
 const updateMapMarkers = () => {
-    const L = (window as any).L;
-
     // Clear existing markers from the map
     mapMarkers.value.forEach((markerInstance) => {
         try {
@@ -121,13 +92,16 @@ const updateMapMarkers = () => {
 
     // Add new markers
     markers.value.forEach((marker) => {
-        const leafletMarker = L.marker([marker.latitude, marker.longitude])
+        const latitude = toCoordinate(marker.latitude);
+        const longitude = toCoordinate(marker.longitude);
+
+        const leafletMarker = L.marker([latitude, longitude])
             .addTo(map.value)
             .bindPopup(
                 `
                 <div>
                     <h3 class="font-bold">${marker.name}</h3>
-                    <p>${marker.latitude.toFixed(6)}, ${marker.longitude.toFixed(
+                    <p>${latitude.toFixed(6)}, ${longitude.toFixed(
                     6,
                 )}</p>
                     ${
@@ -157,7 +131,11 @@ const saveMarker = async () => {
     saving.value = true;
     try {
         const response = await axios.post('/api/markers', newMarker.value);
-        markers.value.push(response.data);
+        markers.value.push({
+            ...response.data,
+            latitude: toCoordinate(response.data.latitude),
+            longitude: toCoordinate(response.data.longitude),
+        });
         updateMapMarkers();
         showForm.value = false;
         newMarker.value = {
@@ -182,8 +160,8 @@ const cancelForm = () => {
 const editMarker = (marker: Marker) => {
     newMarker.value = {
         name: marker.name,
-        latitude: marker.latitude,
-        longitude: marker.longitude,
+        latitude: toCoordinate(marker.latitude),
+        longitude: toCoordinate(marker.longitude),
         description: marker.description || '',
     };
     showForm.value = true;
@@ -210,159 +188,169 @@ onMounted(() => {
         initMap();
     });
 });
+
+onBeforeUnmount(() => {
+    if (map.value) {
+        map.value.remove();
+        map.value = null;
+    }
+});
 </script>
 
 <template>
-    <div class="rounded-lg bg-white p-6 shadow-md dark:bg-gray-800">
-        <h2 class="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
+    <div class="rounded-3xl p-6 shadow-xl h-full w-full">
+        <h2 class="mb-4 text-2xl font-semibold text-zinc-900 dark:text-white">
             Map Widget
         </h2>
 
-        <!-- Map Container -->
-        <div class="mb-4">
-            <div
-                ref="mapContainer"
-                class="h-96 w-full rounded-lg border border-gray-300 dark:border-gray-600"
-            ></div>
-        </div>
 
-        <!-- Marker Form -->
-        <div
-            v-if="showForm"
-            class="mb-4 rounded-lg bg-gray-50 p-4 dark:bg-gray-700"
-        >
-            <h3 class="mb-3 text-lg font-medium text-gray-900 dark:text-white">
-                Add new marker
-            </h3>
-            <form @submit.prevent="saveMarker" class="space-y-3">
-                <div>
-                    <label
-                        class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                    >
-                        Name
-                    </label>
-                    <input
-                        v-model="newMarker.name"
-                        type="text"
-                        required
-                        class="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none dark:border-gray-500 dark:bg-gray-600 dark:text-white"
-                        placeholder="Marker name"
-                    />
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label
-                            class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                        >
-                            Latitude
-                        </label>
-                        <input
-                            v-model="newMarker.latitude"
-                            type="number"
-                            step="any"
-                            required
-                            readonly
-                            class="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 dark:border-gray-500 dark:bg-gray-600 dark:text-white"
-                        />
-                    </div>
-                    <div>
-                        <label
-                            class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                        >
-                            Longitude
-                        </label>
-                        <input
-                            v-model="newMarker.longitude"
-                            type="number"
-                            step="any"
-                            required
-                            readonly
-                            class="w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 dark:border-gray-500 dark:bg-gray-600 dark:text-white"
-                        />
-                    </div>
-                </div>
-                <div>
-                    <label
-                        class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                    >
-                        Description
-                    </label>
-                    <textarea
-                        v-model="newMarker.description"
-                        rows="3"
-                        class="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none dark:border-gray-500 dark:bg-gray-600 dark:text-white"
-                        placeholder="Optional description"
-                    ></textarea>
-                </div>
-                <div class="flex gap-2">
-                    <button
-                        type="submit"
-                        :disabled="saving"
-                        class="rounded-md bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 disabled:opacity-50"
-                    >
-                        {{ saving ? 'Saving...' : 'Save' }}
-                    </button>
-                    <button
-                        type="button"
-                        @click="cancelForm"
-                        class="rounded-md bg-gray-500 px-4 py-2 text-white hover:bg-gray-600"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </form>
-        </div>
-
-        <!-- Markers List -->
-        <div v-if="markers.length > 0" class="space-y-2">
-            <h3 class="text-lg font-medium text-gray-900 dark:text-white">
-                Markers
-            </h3>
-            <div class="max-h-48 space-y-2 overflow-y-auto">
+        <div class="grid gap-4 xl:grid-cols-3 h-full w-full">
+                    <!-- Map Container -->
+            <div class="mb-4 w-full xl:col-span-2">
                 <div
-                    v-for="marker in markers"
-                    :key="marker.id"
-                    class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-600 dark:bg-gray-700"
-                >
-                    <div class="flex items-start justify-between">
-                        <div class="flex-1">
-                            <h4
-                                class="font-medium text-gray-900 dark:text-white"
+                    ref="mapContainer"
+                    class="h-full w-full rounded-2xl border border-zinc-300 dark:border-zinc-700"
+                ></div>
+            </div>
+
+            <!-- Marker Form -->
+            <div
+                v-if="showForm"
+                class="mb-4 w-full rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900"
+            >
+                <h3 class="mb-3 text-lg font-medium text-zinc-900 dark:text-white">
+                    Add new marker
+                </h3>
+                <form @submit.prevent="saveMarker" class="space-y-3">
+                    <div>
+                        <label
+                            class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                        >
+                            Name
+                        </label>
+                        <input
+                            v-model="newMarker.name"
+                            type="text"
+                            required
+                            class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white dark:focus:ring-zinc-500"
+                            placeholder="Marker name"
+                        />
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label
+                                class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
                             >
-                                {{ marker.name }}
-                            </h4>
-                            <p class="text-sm text-gray-600 dark:text-gray-400">
-                                {{ marker.latitude.toFixed(6) }},
-                                {{ marker.longitude.toFixed(6) }}
-                            </p>
-                            <p
-                                v-if="marker.description"
-                                class="mt-1 text-sm text-gray-700 dark:text-gray-300"
-                            >
-                                {{ marker.description }}
-                            </p>
+                                Latitude
+                            </label>
+                            <input
+                                v-model="newMarker.latitude"
+                                type="number"
+                                step="any"
+                                required
+                                readonly
+                                class="w-full rounded-xl border border-zinc-300 bg-zinc-100 px-3 py-2 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                            />
                         </div>
-                        <div class="ml-2 flex gap-1">
-                            <button
-                                @click="editMarker(marker)"
-                                class="rounded bg-yellow-500 px-2 py-1 text-xs text-white hover:bg-yellow-600"
+                        <div>
+                            <label
+                                class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
                             >
-                                Edit
-                            </button>
-                            <button
-                                @click="deleteMarker(marker)"
-                                class="rounded bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600"
-                            >
-                                Delete
-                            </button>
+                                Longitude
+                            </label>
+                            <input
+                                v-model="newMarker.longitude"
+                                type="number"
+                                step="any"
+                                required
+                                readonly
+                                class="w-full rounded-xl border border-zinc-300 bg-zinc-100 px-3 py-2 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                            />
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
+                    <div>
+                        <label
+                            class="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                        >
+                            Description
+                        </label>
+                        <textarea
+                            v-model="newMarker.description"
+                            rows="3"
+                            class="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white dark:focus:ring-zinc-500"
+                            placeholder="Optional description"
+                        ></textarea>
+                    </div>
+                    <div class="flex gap-2">
+                        <button
+                            type="submit"
+                            :disabled="saving"
+                            class="rounded-xl bg-zinc-900 px-4 py-2 text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                        >
+                            {{ saving ? 'Saving...' : 'Save' }}
+                        </button>
+                        <button
+                            type="button"
+                            @click="cancelForm"
+                            class="rounded-xl bg-zinc-600 px-4 py-2 text-white transition hover:bg-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </form>
 
-        <div v-else class="py-4 text-center text-gray-500 dark:text-gray-400">
-            No markers added. Click on the map to add the first marker.
+                <!-- Markers List -->
+                <div v-if="markers.length > 0" class="w-full space-y-2 mt-10">
+                    <h3 class="text-lg font-medium text-zinc-900 dark:text-white">
+                        Markers
+                    </h3>
+                <div class="space-y-2">
+                        <div
+                            v-for="marker in markers"
+                            :key="marker.id"
+                            class="rounded-xl border border-zinc-200 bg-zinc-50 p-3 mx-2 dark:border-zinc-700 dark:bg-zinc-900"
+                        >
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1">
+                                    <h4
+                                        class="font-medium text-zinc-900 dark:text-white"
+                                    >
+                                        {{ marker.name }}
+                                    </h4>
+                                    <p class="text-sm text-zinc-600 dark:text-zinc-400">
+                                        {{ toCoordinate(marker.latitude).toFixed(6) }},
+                                        {{ toCoordinate(marker.longitude).toFixed(6) }}
+                                    </p>
+                                    <p
+                                        v-if="marker.description"
+                                        class="mt-1 text-sm text-zinc-700 dark:text-zinc-300"
+                                    >
+                                        {{ marker.description }}
+                                    </p>
+                                </div>
+                                <div class="ml-2 flex gap-1">
+                                    <button
+                                        @click="editMarker(marker)"
+                                        class="rounded bg-zinc-700 px-2 py-1 text-xs text-white transition hover:bg-zinc-900 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-white"
+                                    >
+                                        Edit
+                                    </button>
+                                    <button
+                                        @click="deleteMarker(marker)"
+                                        class="rounded bg-black px-2 py-1 text-xs text-white transition hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-300"
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                </div> 
+
+            </div>
+
+
         </div>
     </div>
 </template>
