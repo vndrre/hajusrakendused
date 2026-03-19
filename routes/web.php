@@ -4,6 +4,7 @@ use App\Http\Controllers\CommentController;
 use App\Http\Controllers\MarkerController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\StoreController;
+use App\Http\Controllers\StripeCheckoutController;
 use App\Http\Controllers\WeatherController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
@@ -19,6 +20,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('api/weather', [WeatherController::class, 'api'])->name('weather.api');
     Route::get('map', [MarkerController::class, 'index'])->name('map.index');
     Route::get('store', [StoreController::class, 'index'])->name('store.index');
+
+    Route::prefix('api/stripe')->group(function () {
+        Route::post('checkout-session', [StripeCheckoutController::class, 'createCheckoutSession'])
+            ->name('stripe.checkout-session');
+        Route::get('checkout-session-status', [StripeCheckoutController::class, 'verifyCheckoutSession'])
+            ->name('stripe.checkout-session-status');
+    });
 
     Route::prefix('api/markers')->group(function () {
         Route::get('/', [MarkerController::class, 'apiIndex'])->name('markers.api.index');

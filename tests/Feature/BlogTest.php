@@ -27,4 +27,3 @@ it('allows creating a post', function (): void {
 
     expect(Post::query()->count())->toBe(1);
 });
-

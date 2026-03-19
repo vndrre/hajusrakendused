@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import axios from 'axios';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ShoppingCart } from 'lucide-vue-next';
 
 interface StoreProduct {
@@ -40,6 +41,15 @@ const checkoutForm = reactive({
     email: '',
     phone: '',
 });
+
+const checkoutErrors = reactive<{
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phone?: string;
+}>({});
+
+const showCheckoutErrors = ref(false);
 
 const products = computed<StoreProduct[]>(() => {
     if (!props.products) {
@@ -138,49 +148,171 @@ const resetCheckoutState = (): void => {
     checkoutForm.email = '';
     checkoutForm.phone = '';
     selectedPaymentMethod.value = 'Stripe';
+    checkoutErrors.firstName = undefined;
+    checkoutErrors.lastName = undefined;
+    checkoutErrors.email = undefined;
+    checkoutErrors.phone = undefined;
+    showCheckoutErrors.value = false;
 };
 
 const checkoutDisabled = computed(() => {
     return cart.value.length === 0 || paymentStatus.value === 'processing';
 });
 
+const syncStripeStatusFromUrl = async (): Promise<void> => {
+    const params = new URLSearchParams(window.location.search);
+    const stripeFlag = params.get('stripe');
+    const sessionId = params.get('session_id');
+
+    if (!stripeFlag) {
+        return;
+    }
+
+    // Clear query params so refresh doesn't re-trigger verification.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('stripe');
+    url.searchParams.delete('session_id');
+    window.history.replaceState({}, '', url.toString());
+
+    showCartPopup.value = true;
+
+    if (stripeFlag === 'cancel') {
+        paymentStatus.value = 'failed';
+        paymentMessage.value = 'Checkout cancelled.';
+        return;
+    }
+
+    if (stripeFlag === 'success' && sessionId) {
+        paymentStatus.value = 'processing';
+        paymentMessage.value = 'Confirming payment...';
+
+        try {
+            const response = await axios.get('/api/stripe/checkout-session-status', {
+                params: { session_id: sessionId },
+            });
+
+            const { paid, payment_status: paymentStatusFromProvider } = response.data as {
+                paid?: boolean;
+                payment_status?: string | null;
+            };
+
+            if (paid) {
+                paymentStatus.value = 'success';
+                paymentMessage.value = 'Payment successful. Cart cleared.';
+                cart.value = [];
+                resetCheckoutState();
+            } else {
+                paymentStatus.value = 'pending';
+                paymentMessage.value = `Payment not confirmed yet (${paymentStatusFromProvider ?? 'unknown'}).`;
+            }
+        } catch (error) {
+            console.error('Stripe verification failed', error);
+            paymentStatus.value = 'failed';
+            paymentMessage.value = 'Could not verify payment. Please try again.';
+        }
+    }
+};
+
 const payNow = async (): Promise<void> => {
     if (checkoutDisabled.value) {
         return;
     }
 
-    paymentStatus.value = 'processing';
-    paymentMessage.value = 'Processing payment securely...';
+    showCheckoutErrors.value = true;
 
-    await new Promise((resolve) => setTimeout(resolve, 900));
-
-    if (!checkoutForm.firstName || !checkoutForm.lastName || !checkoutForm.email || !checkoutForm.phone) {
+    const isValid = validateCheckoutForm();
+    if (!isValid) {
         paymentStatus.value = 'failed';
-        paymentMessage.value = 'Payment failed: please fill in all customer details.';
+        paymentMessage.value = 'Please fix the checkout errors below.';
         return;
     }
 
-    const randomState = Math.random();
+    paymentStatus.value = 'processing';
+    paymentMessage.value = 'Creating Stripe checkout...';
 
-    if (randomState < 0.6) {
-        paymentStatus.value = 'success';
-        paymentMessage.value = 'Payment successful. Order saved and cart cleared.';
-        // Placeholder for backend order save integration
-        // await axios.post('/api/orders', { ...checkoutForm, items: cart.value, total: total.value });
-        cart.value = [];
-        resetCheckoutState();
-        return;
+    try {
+        const response = await axios.post('/api/stripe/checkout-session', {
+            customer: { ...checkoutForm },
+            items: cart.value.map((item) => ({
+                productId: item.productId,
+                quantity: item.quantity,
+            })),
+        });
+
+        const { url } = response.data as { url?: string | null };
+        if (!url) {
+            throw new Error('Stripe checkout URL missing from response');
+        }
+
+        paymentMessage.value = 'Redirecting to Stripe...';
+        window.location.href = url;
+    } catch (error) {
+        console.error('Stripe checkout creation failed', error);
+        paymentStatus.value = 'failed';
+        paymentMessage.value = 'Could not start Stripe checkout. Please try again.';
     }
-
-    if (randomState < 0.8) {
-        paymentStatus.value = 'pending';
-        paymentMessage.value = 'Payment pending. Please wait for provider confirmation.';
-        return;
-    }
-
-    paymentStatus.value = 'failed';
-    paymentMessage.value = 'Payment failed. Your cart is preserved, please try again.';
 };
+
+onMounted(() => {
+    void syncStripeStatusFromUrl();
+});
+
+const validateCheckoutForm = (): boolean => {
+    checkoutErrors.firstName = undefined;
+    checkoutErrors.lastName = undefined;
+    checkoutErrors.email = undefined;
+    checkoutErrors.phone = undefined;
+
+    const firstName = checkoutForm.firstName.trim();
+    const lastName = checkoutForm.lastName.trim();
+    const email = checkoutForm.email.trim();
+    const phone = checkoutForm.phone.trim();
+
+    if (!firstName) {
+        checkoutErrors.firstName = 'First name is required.';
+    } else if (firstName.length > 100) {
+        checkoutErrors.firstName = 'First name is too long.';
+    }
+
+    if (!lastName) {
+        checkoutErrors.lastName = 'Last name is required.';
+    } else if (lastName.length > 100) {
+        checkoutErrors.lastName = 'Last name is too long.';
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email) {
+        checkoutErrors.email = 'Email is required.';
+    } else if (!emailRegex.test(email)) {
+        checkoutErrors.email = 'Email format is not valid.';
+    }
+
+    // Accept digits with optional leading +, plus spaces/dashes; require at least 7 digits total.
+    const digitsOnly = phone.replace(/\D/g, '');
+    const phoneRegex = /^\+?[0-9\s-]{7,}$/;
+    if (!phone) {
+        checkoutErrors.phone = 'Phone is required.';
+    } else if (!phoneRegex.test(phone) || digitsOnly.length < 7) {
+        checkoutErrors.phone = 'Phone format is not valid.';
+    }
+
+    return !checkoutErrors.firstName && !checkoutErrors.lastName && !checkoutErrors.email && !checkoutErrors.phone;
+};
+
+watch(
+    () => [checkoutForm.firstName, checkoutForm.lastName, checkoutForm.email, checkoutForm.phone],
+    () => {
+        if (!showCheckoutErrors.value) {
+            return;
+        }
+
+        const isValid = validateCheckoutForm();
+        if (isValid) {
+            paymentStatus.value = 'idle';
+            paymentMessage.value = '';
+        }
+    },
+);
 </script>
 
 <template>
@@ -346,10 +478,85 @@ const payNow = async (): Promise<void> => {
                 <div class="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900">
                     <h4 class="mb-3 text-base font-semibold text-zinc-900 dark:text-white">Checkout</h4>
                     <div class="grid gap-2">
-                        <input v-model="checkoutForm.firstName" type="text" placeholder="First name" class="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950" />
-                        <input v-model="checkoutForm.lastName" type="text" placeholder="Last name" class="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950" />
-                        <input v-model="checkoutForm.email" type="email" placeholder="Email" class="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950" />
-                        <input v-model="checkoutForm.phone" type="text" placeholder="Phone" class="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950" />
+                        <div>
+                            <input
+                                v-model="checkoutForm.firstName"
+                                type="text"
+                                placeholder="First name"
+                                :class="[
+                                    'rounded-xl border bg-white px-3 py-2 text-sm dark:bg-zinc-950',
+                                    showCheckoutErrors && checkoutErrors.firstName
+                                        ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 dark:border-red-400'
+                                        : 'border-zinc-300 dark:border-zinc-700',
+                                ]"
+                            />
+                            <p
+                                v-if="showCheckoutErrors && checkoutErrors.firstName"
+                                class="mt-1 text-xs text-red-600 dark:text-red-400"
+                            >
+                                {{ checkoutErrors.firstName }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <input
+                                v-model="checkoutForm.lastName"
+                                type="text"
+                                placeholder="Last name"
+                                :class="[
+                                    'rounded-xl border bg-white px-3 py-2 text-sm dark:bg-zinc-950',
+                                    showCheckoutErrors && checkoutErrors.lastName
+                                        ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 dark:border-red-400'
+                                        : 'border-zinc-300 dark:border-zinc-700',
+                                ]"
+                            />
+                            <p
+                                v-if="showCheckoutErrors && checkoutErrors.lastName"
+                                class="mt-1 text-xs text-red-600 dark:text-red-400"
+                            >
+                                {{ checkoutErrors.lastName }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <input
+                                v-model="checkoutForm.email"
+                                type="email"
+                                placeholder="Email"
+                                :class="[
+                                    'rounded-xl border bg-white px-3 py-2 text-sm dark:bg-zinc-950',
+                                    showCheckoutErrors && checkoutErrors.email
+                                        ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 dark:border-red-400'
+                                        : 'border-zinc-300 dark:border-zinc-700',
+                                ]"
+                            />
+                            <p
+                                v-if="showCheckoutErrors && checkoutErrors.email"
+                                class="mt-1 text-xs text-red-600 dark:text-red-400"
+                            >
+                                {{ checkoutErrors.email }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <input
+                                v-model="checkoutForm.phone"
+                                type="text"
+                                placeholder="Phone"
+                                :class="[
+                                    'rounded-xl border bg-white px-3 py-2 text-sm dark:bg-zinc-950',
+                                    showCheckoutErrors && checkoutErrors.phone
+                                        ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 dark:border-red-400'
+                                        : 'border-zinc-300 dark:border-zinc-700',
+                                ]"
+                            />
+                            <p
+                                v-if="showCheckoutErrors && checkoutErrors.phone"
+                                class="mt-1 text-xs text-red-600 dark:text-red-400"
+                            >
+                                {{ checkoutErrors.phone }}
+                            </p>
+                        </div>
                     </div>
 
                     <div class="mt-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-700 dark:bg-zinc-950">

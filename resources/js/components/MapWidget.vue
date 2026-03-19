@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, onBeforeUnmount } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import axios from 'axios';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -18,6 +18,8 @@ const mapContainer = ref<HTMLElement>();
 const map = ref<any>();
 const markers = ref<Marker[]>([]);
 const showForm = ref(false);
+const formMode = ref<'create' | 'edit'>('create');
+const editingMarkerId = ref<number | null>(null);
 const saving = ref(false);
 const newMarker = ref({
     name: '',
@@ -27,7 +29,49 @@ const newMarker = ref({
 });
 
 const mapMarkers = ref<any[]>([]);
-const toCoordinate = (value: number | string): number => Number(value) || 0;
+const parseCoordinate = (value: number | string | null | undefined): number | null => {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : null;
+    }
+
+    if (typeof value === 'string') {
+        // Accept both "59.123" and "59,123" inputs.
+        const normalized = value.trim().replace(',', '.');
+        if (normalized.length === 0) {
+            return null;
+        }
+
+        const parsed = Number(normalized);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+};
+
+const formatCoordinate = (value: number | string): string => {
+    const parsed = parseCoordinate(value);
+    return parsed === null ? '—' : parsed.toFixed(6);
+};
+
+const escapeHtml = (value: string): string => {
+    // Minimal escaping for marker popups.
+    return value.replace(/[&<>"']/g, (char) => {
+        switch (char) {
+            case '&':
+                return '&amp;';
+            case '<':
+                return '&lt;';
+            case '>':
+                return '&gt;';
+            case '"':
+                return '&quot;';
+            case '\'':
+                return '&#039;';
+            default:
+                return char;
+        }
+    });
+};
 
 const initMap = async () => {
     if (!mapContainer.value) {
@@ -35,7 +79,8 @@ const initMap = async () => {
     }
 
     try {
-        map.value = L.map(mapContainer.value).setView([59.437, 24.7536], 10);
+        // Start at the global view; user can pan/zoom freely anywhere.
+        map.value = L.map(mapContainer.value).setView([0, 0], 2);
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution:
@@ -62,11 +107,7 @@ const initMap = async () => {
 const loadMarkers = async () => {
     try {
         const response = await axios.get('/api/markers');
-        markers.value = response.data.map((marker: Marker) => ({
-            ...marker,
-            latitude: toCoordinate(marker.latitude),
-            longitude: toCoordinate(marker.longitude),
-        }));
+        markers.value = response.data;
         updateMapMarkers();
     } catch (error) {
         console.error('Error loading markers:', error);
@@ -90,34 +131,86 @@ const updateMapMarkers = () => {
         return;
     }
 
+    const validLatLngs: Array<[number, number]> = [];
+
     // Add new markers
     markers.value.forEach((marker) => {
-        const latitude = toCoordinate(marker.latitude);
-        const longitude = toCoordinate(marker.longitude);
+        const latitude = parseCoordinate(marker.latitude);
+        const longitude = parseCoordinate(marker.longitude);
+
+        if (latitude === null || longitude === null) {
+            // Avoid silently plotting at (0,0); just skip invalid records.
+            console.warn('Skipping marker with invalid coordinates', marker);
+            return;
+        }
+
+        validLatLngs.push([latitude, longitude]);
 
         const leafletMarker = L.marker([latitude, longitude])
             .addTo(map.value)
             .bindPopup(
                 `
-                <div>
-                    <h3 class="font-bold">${marker.name}</h3>
-                    <p>${latitude.toFixed(6)}, ${longitude.toFixed(
-                    6,
-                )}</p>
+                <div style="max-width: 260px">
+                    <div style="font-weight: 700; margin-bottom: 4px">${escapeHtml(marker.name)}</div>
+                    <div style="font-size: 12px; opacity: .8; margin-bottom: 8px">${latitude.toFixed(6)}, ${longitude.toFixed(6)}</div>
                     ${
                         marker.description
-                            ? `<p>${marker.description}</p>`
+                            ? `<div style="font-size: 12px; margin-bottom: 10px">${escapeHtml(
+                                  marker.description,
+                              )}</div>`
                             : ''
                     }
+                    <div style="display:flex; gap:8px">
+                        <button type="button" data-action="edit" data-marker-id="${marker.id}" style="flex:1; padding:6px 8px; border-radius:8px; border:1px solid #111827; background:#111827; color:white; cursor:pointer">Edit</button>
+                        <button type="button" data-action="delete" data-marker-id="${marker.id}" style="flex:1; padding:6px 8px; border-radius:8px; border:1px solid #111827; background:#000000; color:white; cursor:pointer">Delete</button>
+                    </div>
                 </div>
             `,
             );
 
         mapMarkers.value.push(leafletMarker);
+
+        leafletMarker.on('popupopen', (event: any) => {
+            const popupEl = event?.popup?.getElement?.() as HTMLElement | null;
+            if (!popupEl) return;
+
+            const editBtn = popupEl.querySelector('button[data-action="edit"]') as HTMLButtonElement | null;
+            const deleteBtn = popupEl.querySelector('button[data-action="delete"]') as HTMLButtonElement | null;
+
+            editBtn?.addEventListener('click', (e: MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                editMarker(marker);
+                event?.popup?.remove?.();
+            });
+
+            deleteBtn?.addEventListener('click', (e: MouseEvent) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openDeleteModal(marker);
+                event?.popup?.remove?.();
+            });
+        });
     });
+
+    // Fit map to markers when possible so markers appear in correct positions.
+    if (validLatLngs.length > 0) {
+        const bounds = L.latLngBounds(validLatLngs);
+        if (bounds.isValid()) {
+            map.value.fitBounds(bounds, { padding: [24, 24] });
+        }
+    }
+
+    // Leaflet can misplace markers if the container resized (e.g. when form opens).
+    setTimeout(() => {
+        map.value?.invalidateSize();
+    }, 0);
 };
 
 const showMarkerForm = (lat: number, lng: number) => {
+    formMode.value = 'create';
+    editingMarkerId.value = null;
+
     newMarker.value = {
         name: '',
         latitude: lat,
@@ -130,20 +223,26 @@ const showMarkerForm = (lat: number, lng: number) => {
 const saveMarker = async () => {
     saving.value = true;
     try {
-        const response = await axios.post('/api/markers', newMarker.value);
-        markers.value.push({
-            ...response.data,
-            latitude: toCoordinate(response.data.latitude),
-            longitude: toCoordinate(response.data.longitude),
-        });
+        if (formMode.value === 'edit' && editingMarkerId.value !== null) {
+            const response = await axios.put(`/api/markers/${editingMarkerId.value}`, newMarker.value);
+
+            markers.value = markers.value.map((existing) => {
+                if (existing.id !== response.data.id) {
+                    return existing;
+                }
+
+                return response.data;
+            });
+        } else {
+            const response = await axios.post('/api/markers', newMarker.value);
+            markers.value.push(response.data);
+        }
+
         updateMapMarkers();
         showForm.value = false;
-        newMarker.value = {
-            name: '',
-            latitude: 0,
-            longitude: 0,
-            description: '',
-        };
+        formMode.value = 'create';
+        editingMarkerId.value = null;
+        newMarker.value = { name: '', latitude: 0, longitude: 0, description: '' };
     } catch (error) {
         console.error('Error saving marker:', error);
         alert('Error saving marker');
@@ -154,32 +253,61 @@ const saveMarker = async () => {
 
 const cancelForm = () => {
     showForm.value = false;
+    formMode.value = 'create';
+    editingMarkerId.value = null;
     newMarker.value = { name: '', latitude: 0, longitude: 0, description: '' };
 };
 
 const editMarker = (marker: Marker) => {
+    formMode.value = 'edit';
+    editingMarkerId.value = marker.id;
+
+    const latitude = parseCoordinate(marker.latitude);
+    const longitude = parseCoordinate(marker.longitude);
+
     newMarker.value = {
         name: marker.name,
-        latitude: toCoordinate(marker.latitude),
-        longitude: toCoordinate(marker.longitude),
+        latitude: latitude ?? 0,
+        longitude: longitude ?? 0,
         description: marker.description || '',
     };
     showForm.value = true;
-    // For edit, we would need to implement update logic
-    // For now, just show the form with existing data
 };
 
-const deleteMarker = async (marker: Marker) => {
-    if (!confirm('Kas olete kindel, et soovite selle markeri kustutada?'))
-        return;
+const deleteModalOpen = ref(false);
+const deleteTargetMarker = ref<Marker | null>(null);
+const deleteSubmitting = ref(false);
+const deleteErrorMessage = ref<string | null>(null);
 
+const openDeleteModal = (marker: Marker): void => {
+    deleteTargetMarker.value = marker;
+    deleteErrorMessage.value = null;
+    deleteModalOpen.value = true;
+};
+
+const closeDeleteModal = (): void => {
+    deleteModalOpen.value = false;
+    deleteTargetMarker.value = null;
+    deleteErrorMessage.value = null;
+    deleteSubmitting.value = false;
+};
+
+const confirmDeleteMarker = async (): Promise<void> => {
+    if (!deleteTargetMarker.value) {
+        return;
+    }
+
+    deleteSubmitting.value = true;
     try {
-        await axios.delete(`/api/markers/${marker.id}`);
-        markers.value = markers.value.filter((m) => m.id !== marker.id);
+        await axios.delete(`/api/markers/${deleteTargetMarker.value.id}`);
+        markers.value = markers.value.filter((m) => m.id !== deleteTargetMarker.value?.id);
         updateMapMarkers();
+        closeDeleteModal();
     } catch (error) {
         console.error('Error deleting marker:', error);
-        alert('Viga markeri kustutamisel');
+        deleteErrorMessage.value = 'Viga markeri kustutamisel';
+    } finally {
+        deleteSubmitting.value = false;
     }
 };
 
@@ -194,6 +322,14 @@ onBeforeUnmount(() => {
         map.value.remove();
         map.value = null;
     }
+});
+
+// Leaflet needs invalidateSize when layout changes (this component grows/shrinks
+// when `showForm` toggles).
+watch(showForm, () => {
+    nextTick(() => {
+        map.value?.invalidateSize?.();
+    });
 });
 </script>
 
@@ -219,7 +355,7 @@ onBeforeUnmount(() => {
                 class="mb-4 w-full rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900"
             >
                 <h3 class="mb-3 text-lg font-medium text-zinc-900 dark:text-white">
-                    Add new marker
+                    {{ formMode === 'edit' ? 'Edit marker' : 'Add new marker' }}
                 </h3>
                 <form @submit.prevent="saveMarker" class="space-y-3">
                     <div>
@@ -244,11 +380,12 @@ onBeforeUnmount(() => {
                                 Latitude
                             </label>
                             <input
-                                v-model="newMarker.latitude"
+                                v-model.number="newMarker.latitude"
                                 type="number"
                                 step="any"
                                 required
-                                readonly
+                                min="-90"
+                                max="90"
                                 class="w-full rounded-xl border border-zinc-300 bg-zinc-100 px-3 py-2 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
                             />
                         </div>
@@ -259,11 +396,12 @@ onBeforeUnmount(() => {
                                 Longitude
                             </label>
                             <input
-                                v-model="newMarker.longitude"
+                                v-model.number="newMarker.longitude"
                                 type="number"
                                 step="any"
                                 required
-                                readonly
+                                min="-180"
+                                max="180"
                                 class="w-full rounded-xl border border-zinc-300 bg-zinc-100 px-3 py-2 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
                             />
                         </div>
@@ -287,7 +425,7 @@ onBeforeUnmount(() => {
                             :disabled="saving"
                             class="rounded-xl bg-zinc-900 px-4 py-2 text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
                         >
-                            {{ saving ? 'Saving...' : 'Save' }}
+                            {{ saving ? 'Saving...' : formMode === 'edit' ? 'Update' : 'Save' }}
                         </button>
                         <button
                             type="button"
@@ -318,8 +456,8 @@ onBeforeUnmount(() => {
                                         {{ marker.name }}
                                     </h4>
                                     <p class="text-sm text-zinc-600 dark:text-zinc-400">
-                                        {{ toCoordinate(marker.latitude).toFixed(6) }},
-                                        {{ toCoordinate(marker.longitude).toFixed(6) }}
+                                        {{ formatCoordinate(marker.latitude) }},
+                                        {{ formatCoordinate(marker.longitude) }}
                                     </p>
                                     <p
                                         v-if="marker.description"
@@ -336,7 +474,7 @@ onBeforeUnmount(() => {
                                         Edit
                                     </button>
                                     <button
-                                        @click="deleteMarker(marker)"
+                                        @click="openDeleteModal(marker)"
                                         class="rounded bg-black px-2 py-1 text-xs text-white transition hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-300"
                                     >
                                         Delete
@@ -351,6 +489,66 @@ onBeforeUnmount(() => {
             </div>
 
 
+        </div>
+    </div>
+
+    <!-- Delete confirmation modal (UI popup, not browser confirm()) -->
+    <div
+        v-if="deleteModalOpen"
+        class="fixed inset-0 z-[10000] flex items-center justify-center"
+        role="dialog"
+        aria-modal="true"
+    >
+        <div
+            class="absolute inset-0 z-[10000] bg-black/60"
+            @click="closeDeleteModal"
+        ></div>
+
+        <div class="relative z-[10001] w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+            <h3 class="mb-2 text-lg font-semibold text-zinc-900 dark:text-white">
+                Delete marker
+            </h3>
+
+            <p class="text-sm text-zinc-700 dark:text-zinc-300">
+                Are you sure you want to delete
+                <span class="font-semibold">{{ deleteTargetMarker?.name }}</span>?
+            </p>
+
+            <div v-if="deleteTargetMarker" class="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-700 dark:bg-zinc-800">
+                <div class="text-zinc-800 dark:text-zinc-200">
+                    {{ formatCoordinate(deleteTargetMarker.latitude) }},
+                    {{ formatCoordinate(deleteTargetMarker.longitude) }}
+                </div>
+                <div v-if="deleteTargetMarker.description" class="mt-1 text-zinc-600 dark:text-zinc-300">
+                    {{ deleteTargetMarker.description }}
+                </div>
+            </div>
+
+            <p
+                v-if="deleteErrorMessage"
+                class="mt-3 text-sm font-medium text-red-600 dark:text-red-400"
+            >
+                {{ deleteErrorMessage }}
+            </p>
+
+            <div class="mt-5 flex gap-2">
+                <button
+                    type="button"
+                    @click="closeDeleteModal"
+                    :disabled="deleteSubmitting"
+                    class="flex-1 rounded-xl bg-zinc-200 px-4 py-2 text-zinc-900 transition hover:bg-zinc-300 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                >
+                    Cancel
+                </button>
+                <button
+                    type="button"
+                    @click="confirmDeleteMarker"
+                    :disabled="deleteSubmitting"
+                    class="flex-1 rounded-xl bg-black px-4 py-2 text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                >
+                    {{ deleteSubmitting ? 'Deleting...' : 'Delete' }}
+                </button>
+            </div>
         </div>
     </div>
 </template>

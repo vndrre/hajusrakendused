@@ -58,11 +58,11 @@
 </script>
 
 <template>
-    <div class="relative h-full w-full overflow-hidden rounded-3xl border border-zinc-200 bg-zinc-100 p-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+    <div class="relative h-full overflow-hidden rounded-3xl border border-zinc-200 bg-zinc-100 p-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
         <div
-            class="h-full rounded-[calc(theme(borderRadius.3xl)-2px)] bg-white p-6 dark:bg-zinc-950"
+            class="h-full rounded-[calc(theme(borderRadius.3xl)-2px)] bg-white p-4 dark:bg-zinc-950"
         >
-            <div class="mb-6 flex items-center justify-between">
+            <div class="mb-4 flex items-center justify-between">
                 <div>
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500 dark:text-zinc-400">Live weather</p>
                     <h2 class="text-2xl font-bold text-zinc-900 dark:text-white">Forecast Overview</h2>
@@ -72,7 +72,7 @@
                 </div>
             </div>
 
-            <form @submit.prevent="searchWeather" class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto]">
+            <form @submit.prevent="searchWeather" class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto]">
                 <input
                     v-model="searchCity"
                     type="text"
@@ -108,14 +108,14 @@
                 {{ error }}
             </div>
 
-            <div v-else-if="weather" class="space-y-6">
-                <div class="flex flex-col gap-4 rounded-2xl bg-zinc-100 p-4 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between">
+            <div v-else-if="weather" class="space-y-4">
+                <div class="flex justify-center items-center gap-3 rounded-2xl bg-zinc-100 p-3 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between">
                     <div class="flex items-center gap-3">
-                        <div class="rounded-2xl bg-white p-2 shadow-sm dark:bg-zinc-950">
+                        <div class="rounded-2xl bg-white p-1.5 shadow-sm dark:bg-zinc-950">
                             <img
                                 :src="`https://openweathermap.org/img/wn/${weather.weather[0].icon}@2x.png`"
                                 :alt="weather.weather[0].description"
-                                class="h-14 w-14"
+                                class="h-12 w-12"
                             />
                         </div>
                         <div>
@@ -162,7 +162,7 @@
                 </div>
             </div>
 
-            <div v-else class="rounded-2xl border border-dashed border-zinc-300 bg-zinc-100 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+            <div v-else class="rounded-2xl border border-dashed border-zinc-300 bg-zinc-100 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                 Insert city, to see weather information
             </div>
         </div>
