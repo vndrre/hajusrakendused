@@ -341,14 +341,13 @@ watch(showForm, () => {
 
 
         <div class="grid gap-4 xl:grid-cols-3 h-full w-full">
-                    <!-- Map Container -->
+            <!-- Map Container -->
             <div class="mb-4 w-full xl:col-span-2">
                 <div
                     ref="mapContainer"
                     class="h-full w-full rounded-2xl border border-zinc-300 dark:border-zinc-700"
                 ></div>
             </div>
-
             <!-- Marker Form -->
             <div
                 v-if="showForm"

@@ -4,12 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\Comment;
 use App\Models\Post;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class CommentController extends Controller
 {
-    public function store(Request $request, Post $post): RedirectResponse
+    public function store(Request $request, Post $post): \Symfony\Component\HttpFoundation\Response
     {
         $validated = $request->validate([
             'body' => ['required', 'string', 'max:1000'],
@@ -20,20 +20,19 @@ class CommentController extends Controller
             'body' => $validated['body'],
         ]);
 
-        return redirect()->route('blog.index');
+        return Inertia::location(route('blog.index'));
     }
 
-    public function destroy(Request $request, Comment $comment): RedirectResponse
+    public function destroy(Request $request, Comment $comment): \Symfony\Component\HttpFoundation\Response
     {
         $user = $request->user();
 
-        if ($user->id !== $comment->user_id && $user->id !== $comment->post->user_id) {
+        if ($user->id !== $comment->user_id) {
             abort(403);
         }
 
         $comment->delete();
 
-        return redirect()->route('blog.index');
+        return Inertia::location(route('blog.index'));
     }
 }
-

@@ -49,6 +49,15 @@ const checkoutErrors = reactive<{
     phone?: string;
 }>({});
 
+const getStripeErrorMessage = (error: unknown): string | null => {
+    if (!axios.isAxiosError(error)) {
+        return null;
+    }
+
+    const message = error.response?.data?.message;
+    return typeof message === 'string' && message.trim() ? message : null;
+};
+
 const showCheckoutErrors = ref(false);
 
 const products = computed<StoreProduct[]>(() => {
@@ -208,7 +217,8 @@ const syncStripeStatusFromUrl = async (): Promise<void> => {
         } catch (error) {
             console.error('Stripe verification failed', error);
             paymentStatus.value = 'failed';
-            paymentMessage.value = 'Could not verify payment. Please try again.';
+            paymentMessage.value =
+                getStripeErrorMessage(error) ?? 'Could not verify payment. Please try again.';
         }
     }
 };
@@ -249,7 +259,7 @@ const payNow = async (): Promise<void> => {
     } catch (error) {
         console.error('Stripe checkout creation failed', error);
         paymentStatus.value = 'failed';
-        paymentMessage.value = 'Could not start Stripe checkout. Please try again.';
+        paymentMessage.value = getStripeErrorMessage(error) ?? 'Could not start Stripe checkout. Please try again.';
     }
 };
 
@@ -484,7 +494,7 @@ watch(
                                 type="text"
                                 placeholder="First name"
                                 :class="[
-                                    'rounded-xl border bg-white px-3 py-2 text-sm dark:bg-zinc-950',
+                                    'rounded-xl border bg-white px-3 py-2 text-sm dark:bg-zinc-950 w-full',
                                     showCheckoutErrors && checkoutErrors.firstName
                                         ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 dark:border-red-400'
                                         : 'border-zinc-300 dark:border-zinc-700',
@@ -504,7 +514,7 @@ watch(
                                 type="text"
                                 placeholder="Last name"
                                 :class="[
-                                    'rounded-xl border bg-white px-3 py-2 text-sm dark:bg-zinc-950',
+                                    'rounded-xl border bg-white px-3 py-2 text-sm dark:bg-zinc-950 w-full',
                                     showCheckoutErrors && checkoutErrors.lastName
                                         ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 dark:border-red-400'
                                         : 'border-zinc-300 dark:border-zinc-700',
@@ -524,7 +534,7 @@ watch(
                                 type="email"
                                 placeholder="Email"
                                 :class="[
-                                    'rounded-xl border bg-white px-3 py-2 text-sm dark:bg-zinc-950',
+                                    'rounded-xl border bg-white px-3 py-2 text-sm dark:bg-zinc-950 w-full',
                                     showCheckoutErrors && checkoutErrors.email
                                         ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 dark:border-red-400'
                                         : 'border-zinc-300 dark:border-zinc-700',
@@ -544,7 +554,7 @@ watch(
                                 type="text"
                                 placeholder="Phone"
                                 :class="[
-                                    'rounded-xl border bg-white px-3 py-2 text-sm dark:bg-zinc-950',
+                                    'rounded-xl border bg-white px-3 py-2 text-sm dark:bg-zinc-950 w-full',
                                     showCheckoutErrors && checkoutErrors.phone
                                         ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 dark:border-red-400'
                                         : 'border-zinc-300 dark:border-zinc-700',

@@ -28,7 +28,10 @@ class StripeCheckoutController extends Controller
         }
 
         $currency = (string) config('stripe.currency', 'usd');
-        $baseUrl = rtrim((string) config('app.url'), '/');
+
+        // Use the current request host so Stripe redirects back to the same
+        // origin (important for host-only session cookies).
+        $baseUrl = rtrim($request->getSchemeAndHttpHost(), '/');
         $successUrl = $baseUrl.'/store?stripe=success&session_id={CHECKOUT_SESSION_ID}';
         $cancelUrl = $baseUrl.'/store?stripe=cancel';
 

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Post;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -25,7 +24,7 @@ class PostController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): \Symfony\Component\HttpFoundation\Response
     {
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
@@ -34,10 +33,10 @@ class PostController extends Controller
 
         $request->user()->posts()->create($validated);
 
-        return redirect()->route('blog.index');
+        return Inertia::location(route('blog.index'));
     }
 
-    public function update(Request $request, Post $post): RedirectResponse
+    public function update(Request $request, Post $post): \Symfony\Component\HttpFoundation\Response
     {
         if ($request->user()->id !== $post->user_id) {
             abort(403);
@@ -50,10 +49,10 @@ class PostController extends Controller
 
         $post->update($validated);
 
-        return redirect()->route('blog.index');
+        return Inertia::location(route('blog.index'));
     }
 
-    public function destroy(Request $request, Post $post): RedirectResponse
+    public function destroy(Request $request, Post $post): \Symfony\Component\HttpFoundation\Response
     {
         if ($request->user()->id !== $post->user_id) {
             abort(403);
@@ -61,7 +60,6 @@ class PostController extends Controller
 
         $post->delete();
 
-        return redirect()->route('blog.index');
+        return Inertia::location(route('blog.index'));
     }
 }
-

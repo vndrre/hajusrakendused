@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, useForm } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 
 interface User {
@@ -32,6 +33,106 @@ const createPostForm = useForm({
     title: '',
     description: '',
 });
+
+const deletePostForm = useForm({});
+
+const deleteModalOpen = ref(false);
+const deleteTargetPostId = ref<number | null>(null);
+const deleteSubmitting = ref(false);
+const deleteErrorMessage = ref<string | null>(null);
+
+const deleteTargetPost = computed(() => {
+    if (!deleteTargetPostId.value) {
+        return null;
+    }
+
+    return posts.find((post) => post.id === deleteTargetPostId.value) ?? null;
+});
+
+const openDeleteModal = (postId: number): void => {
+    deleteTargetPostId.value = postId;
+    deleteErrorMessage.value = null;
+    deleteModalOpen.value = true;
+};
+
+const closeDeleteModal = (): void => {
+    deleteModalOpen.value = false;
+    deleteTargetPostId.value = null;
+    deleteErrorMessage.value = null;
+    deleteSubmitting.value = false;
+};
+
+const confirmDeletePost = (): void => {
+    if (!deleteTargetPostId.value) {
+        return;
+    }
+
+    deleteSubmitting.value = true;
+    deletePostForm.delete(`/blog/${deleteTargetPostId.value}`, {
+        preserveScroll: true,
+        onSuccess: () => closeDeleteModal(),
+        onError: () => {
+            deleteErrorMessage.value = 'Failed to delete the post.';
+            deleteSubmitting.value = false;
+        },
+        onFinish: () => {
+            deleteSubmitting.value = false;
+        },
+    });
+};
+
+const deleteCommentForm = useForm({});
+const deleteCommentModalOpen = ref(false);
+const deleteTargetCommentId = ref<number | null>(null);
+const deleteCommentSubmitting = ref(false);
+const deleteCommentErrorMessage = ref<string | null>(null);
+
+const deleteTargetComment = computed(() => {
+    if (!deleteTargetCommentId.value) {
+        return null;
+    }
+
+    for (const post of posts) {
+        const found = post.comments.find((comment) => comment.id === deleteTargetCommentId.value);
+        if (found) {
+            return found;
+        }
+    }
+
+    return null;
+});
+
+const openDeleteCommentModal = (commentId: number): void => {
+    deleteTargetCommentId.value = commentId;
+    deleteCommentErrorMessage.value = null;
+    deleteCommentModalOpen.value = true;
+};
+
+const closeDeleteCommentModal = (): void => {
+    deleteCommentModalOpen.value = false;
+    deleteTargetCommentId.value = null;
+    deleteCommentErrorMessage.value = null;
+    deleteCommentSubmitting.value = false;
+};
+
+const confirmDeleteComment = (): void => {
+    if (!deleteTargetCommentId.value) {
+        return;
+    }
+
+    deleteCommentSubmitting.value = true;
+    deleteCommentForm.delete(`/comments/${deleteTargetCommentId.value}`, {
+        preserveScroll: true,
+        onSuccess: () => closeDeleteCommentModal(),
+        onError: () => {
+            deleteCommentErrorMessage.value = 'Failed to delete the comment.';
+            deleteCommentSubmitting.value = false;
+        },
+        onFinish: () => {
+            deleteCommentSubmitting.value = false;
+        },
+    });
+};
 
 const commentForms = new Map<number, ReturnType<typeof useForm>>();
 
@@ -139,15 +240,20 @@ const getCommentForm = (postId: number) => {
                                                 <span class="text-sm font-semibold text-zinc-900 dark:text-white">{{ post.user.name }}</span>
                                                 <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ new Date(post.created_at).toLocaleString() }}</span>
                                             </div>
-                                            <div v-if="authUser && authUser.id === post.user.id" class="flex gap-2 text-xs">
-                                                <Link
-                                                    as="button"
-                                                    method="delete"
-                                                    :href="`/blog/${post.id}`"
+                                            <div
+                                                v-if="
+                                                    authUser
+                                                    && Number(authUser.id) === Number(post.user.id)
+                                                "
+                                                class="flex gap-2 text-xs"
+                                            >
+                                                <button
+                                                    type="button"
+                                                    @click="openDeleteModal(post.id)"
                                                     class="rounded-md cursor-pointer px-2 py-1 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
                                                 >
                                                     Delete
-                                                </Link>
+                                                </button>
                                             </div>
                                         </div>
 
@@ -172,17 +278,19 @@ const getCommentForm = (postId: number) => {
                                         </div>
 
                                         <div
-                                            v-if="authUser && (authUser.id === comment.user.id || authUser.id === post.user.id)"
+                                            v-if="
+                                                authUser
+                                                && Number(authUser.id) === Number(comment.user.id)
+                                            "
                                             class="ml-2 shrink-0 text-xs"
                                         >
-                                            <Link
-                                                as="button"
-                                                method="delete"
-                                                :href="`/comments/${comment.id}`"
+                                            <button
+                                                type="button"
+                                                @click="openDeleteCommentModal(comment.id)"
                                                 class="rounded-md cursor-pointer px-2 py-1 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
                                             >
                                                 Delete
-                                            </Link>
+                                            </button>
                                         </div>
                                     </div>
 
@@ -217,6 +325,116 @@ const getCommentForm = (postId: number) => {
                                 </div>
                             </article>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Delete post confirmation modal (prevents accidental deletes) -->
+            <div
+                v-if="deleteModalOpen"
+                class="fixed inset-0 z-[10000] flex items-center justify-center"
+                role="dialog"
+                aria-modal="true"
+            >
+                <div
+                    class="absolute inset-0 z-[10000] bg-black/60"
+                    @click="closeDeleteModal"
+                ></div>
+
+                <div
+                    class="relative z-[10001] w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+                >
+                    <h3 class="mb-2 text-lg font-semibold text-zinc-900 dark:text-white">
+                        Delete post
+                    </h3>
+
+                    <p class="text-sm text-zinc-700 dark:text-zinc-300">
+                        Are you sure you want to delete
+                        <span class="font-semibold">
+                            {{ deleteTargetPost?.title ?? `#${deleteTargetPostId}` }}
+                        </span>
+                        ?
+                    </p>
+
+                    <p
+                        v-if="deleteErrorMessage"
+                        class="mt-3 text-sm font-medium text-red-600 dark:text-red-400"
+                    >
+                        {{ deleteErrorMessage }}
+                    </p>
+
+                    <div class="mt-5 flex gap-2">
+                        <button
+                            type="button"
+                            @click="closeDeleteModal"
+                            :disabled="deleteSubmitting"
+                            class="flex-1 rounded-xl bg-zinc-200 px-4 py-2 text-zinc-900 transition hover:bg-zinc-300 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            @click="confirmDeletePost"
+                            :disabled="deleteSubmitting"
+                            class="flex-1 rounded-xl bg-black px-4 py-2 text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                        >
+                            {{ deleteSubmitting ? 'Deleting...' : 'Delete' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Delete comment confirmation modal (prevents accidental deletes) -->
+            <div
+                v-if="deleteCommentModalOpen"
+                class="fixed inset-0 z-[10000] flex items-center justify-center"
+                role="dialog"
+                aria-modal="true"
+            >
+                <div
+                    class="absolute inset-0 z-[10000] bg-black/60"
+                    @click="closeDeleteCommentModal"
+                ></div>
+
+                <div
+                    class="relative z-[10001] w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+                >
+                    <h3 class="mb-2 text-lg font-semibold text-zinc-900 dark:text-white">
+                        Delete comment
+                    </h3>
+
+                    <p class="text-sm text-zinc-700 dark:text-zinc-300">
+                        Are you sure you want to delete
+                        <span class="font-semibold">
+                            {{ deleteTargetComment?.body ?? `#${deleteTargetCommentId}` }}
+                        </span>
+                        ?
+                    </p>
+
+                    <p
+                        v-if="deleteCommentErrorMessage"
+                        class="mt-3 text-sm font-medium text-red-600 dark:text-red-400"
+                    >
+                        {{ deleteCommentErrorMessage }}
+                    </p>
+
+                    <div class="mt-5 flex gap-2">
+                        <button
+                            type="button"
+                            @click="closeDeleteCommentModal"
+                            :disabled="deleteCommentSubmitting"
+                            class="flex-1 rounded-xl bg-zinc-200 px-4 py-2 text-zinc-900 transition hover:bg-zinc-300 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            @click="confirmDeleteComment"
+                            :disabled="deleteCommentSubmitting"
+                            class="flex-1 rounded-xl bg-black px-4 py-2 text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                        >
+                            {{ deleteCommentSubmitting ? 'Deleting...' : 'Delete' }}
+                        </button>
                     </div>
                 </div>
             </div>
