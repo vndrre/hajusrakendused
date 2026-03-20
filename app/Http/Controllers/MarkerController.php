@@ -3,22 +3,38 @@
 namespace App\Http\Controllers;
 
 use App\Models\Marker;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class MarkerController extends Controller
 {
-    public function index()
+    public function index(Request $request): \Inertia\Response
     {
+        $user = $request->user();
+
+        if (! $user) {
+            return Inertia::render('Map', [
+                'markers' => [],
+            ]);
+        }
+
         return Inertia::render('Map', [
-            'markers' => Marker::all(),
+            'markers' => Marker::query()
+                ->where('user_id', $user->id)
+                ->get(),
         ]);
     }
 
-    public function apiIndex(): JsonResponse
+    public function apiIndex(Request $request): JsonResponse
     {
-        return response()->json(Marker::all());
+        $user = $request->user();
+
+        return response()->json(
+            Marker::query()
+                ->where('user_id', $user?->id)
+                ->get(),
+        );
     }
 
     public function store(Request $request): JsonResponse
@@ -30,7 +46,12 @@ class MarkerController extends Controller
             'description' => 'nullable|string|max:1000',
         ]);
 
+        $user = $request->user();
+
+        abort_unless($user, 401);
+
         $marker = Marker::create([
+            'user_id' => $user->id,
             'name' => $validated['name'],
             'latitude' => $validated['latitude'],
             'longitude' => $validated['longitude'],
@@ -41,13 +62,25 @@ class MarkerController extends Controller
         return response()->json($marker, 201);
     }
 
-    public function show(Marker $marker): JsonResponse
+    public function show(Request $request, Marker $marker): JsonResponse
     {
+        $user = $request->user();
+
+        if (! $user || (string) $marker->user_id !== (string) $user->id) {
+            abort(404);
+        }
+
         return response()->json($marker);
     }
 
     public function update(Request $request, Marker $marker): JsonResponse
     {
+        $user = $request->user();
+
+        if (! $user || (string) $marker->user_id !== (string) $user->id) {
+            abort(404);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'latitude' => 'required|numeric|between:-90,90',
@@ -68,7 +101,14 @@ class MarkerController extends Controller
 
     public function destroy(Marker $marker): JsonResponse
     {
+        $user = request()->user();
+
+        if (! $user || (string) $marker->user_id !== (string) $user->id) {
+            abort(404);
+        }
+
         $marker->delete();
+
         return response()->json(['message' => 'Marker deleted successfully']);
     }
 }

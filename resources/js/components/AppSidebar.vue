@@ -50,7 +50,11 @@ const mainNavItems: NavItem[] = [
         title: 'Store',
         href: '/store',
         icon: ShoppingCart,
-    }
+    },
+    {
+        title: 'API',
+        href: '/api',
+    },
 ];
 
 const footerNavItems: NavItem[] = [

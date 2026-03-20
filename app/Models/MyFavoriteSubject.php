@@ -6,26 +6,30 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Marker extends Model
+class MyFavoriteSubject extends Model
 {
     use HasFactory;
 
+    protected $table = 'my_favorite_subject';
+
+    /**
+     * @var list<string>
+     */
     protected $fillable = [
         'user_id',
-        'name',
-        'latitude',
-        'longitude',
+        'title',
+        'image',
         'description',
-        'added',
-        'edited',
+        'author',
+        'publication_year',
     ];
 
-    protected $casts = [
-        'latitude' => 'decimal:8',
-        'longitude' => 'decimal:8',
-        'added' => 'datetime',
-        'edited' => 'datetime',
-    ];
+    protected function casts(): array
+    {
+        return [
+            'publication_year' => 'integer',
+        ];
+    }
 
     public function user(): BelongsTo
     {

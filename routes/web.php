@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\BooksController;
 use App\Http\Controllers\CommentController;
 use App\Http\Controllers\MarkerController;
 use App\Http\Controllers\PostController;
@@ -18,8 +19,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('weather', [WeatherController::class, 'show'])->name('weather.show');
     Route::get('api/weather', [WeatherController::class, 'api'])->name('weather.api');
+    Route::post('api/weather/selection', [WeatherController::class, 'selection'])->name('weather.selection');
     Route::get('map', [MarkerController::class, 'index'])->name('map.index');
     Route::get('store', [StoreController::class, 'index'])->name('store.index');
+
+    Route::get('api', [BooksController::class, 'apiPage'])->name('api.page');
+    Route::get('api/books', [BooksController::class, 'apiIndex'])->name('books.api.index');
+    Route::post('api/books', [BooksController::class, 'apiStore'])->name('books.api.store');
 
     Route::prefix('api/stripe')->group(function () {
         Route::post('checkout-session', [StripeCheckoutController::class, 'createCheckoutSession'])

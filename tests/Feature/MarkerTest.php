@@ -20,28 +20,33 @@ test('can create marker', function () {
     $response = $this->postJson('/api/markers', $markerData);
 
     $response->assertStatus(201)
-             ->assertJson($markerData);
+        ->assertJson($markerData);
 
-    $this->assertDatabaseHas('markers', $markerData);
+    $this->assertDatabaseHas('markers', [
+        ...$markerData,
+        'user_id' => $user->id,
+    ]);
 });
 
 test('can list markers', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
-    Marker::factory()->count(3)->create();
+    Marker::factory()->for($user)->count(3)->create();
+    $otherUser = User::factory()->create();
+    Marker::factory()->for($otherUser)->count(2)->create();
 
     $response = $this->getJson('/api/markers');
 
     $response->assertStatus(200)
-             ->assertJsonCount(3);
+        ->assertJsonCount(3);
 });
 
 test('can update marker', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
-    $marker = Marker::factory()->create();
+    $marker = Marker::factory()->for($user)->create();
 
     $updatedData = [
         'name' => 'Updated Marker',
@@ -53,16 +58,19 @@ test('can update marker', function () {
     $response = $this->putJson("/api/markers/{$marker->id}", $updatedData);
 
     $response->assertStatus(200)
-             ->assertJson($updatedData);
+        ->assertJson($updatedData);
 
-    $this->assertDatabaseHas('markers', $updatedData);
+    $this->assertDatabaseHas('markers', [
+        ...$updatedData,
+        'user_id' => $user->id,
+    ]);
 });
 
 test('can delete marker', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
-    $marker = Marker::factory()->create();
+    $marker = Marker::factory()->for($user)->create();
 
     $response = $this->deleteJson("/api/markers/{$marker->id}");
 

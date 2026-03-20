@@ -1,6 +1,7 @@
 <script setup lang="ts">
     import axios from 'axios';
-    import { ref, onMounted } from 'vue';
+    import { usePage } from '@inertiajs/vue3';
+    import { onMounted, ref } from 'vue';
 
     interface WeatherData {
         name: string;
@@ -11,11 +12,93 @@
         clouds?: { all: number };
     }
 
-    const searchCity = ref('Tallinn');
-    const searchCountry = ref('EE');
+    const page = usePage<{
+        city?: string;
+        country?: string;
+        auth?: { user?: { weather_city?: string | null; weather_country?: string | null } };
+    }>();
+
+    const searchCity = ref<string>(String(page.props.city ?? page.props.auth?.user?.weather_city ?? 'Tallinn'));
+    const searchCountry = ref<string>(String(page.props.country ?? page.props.auth?.user?.weather_country ?? 'EE'));
     const weather = ref<WeatherData | null>(null);
     const loading = ref(false);
     const error = ref('');
+
+    const WEATHER_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+    const hashString = (input: string): string => {
+        // FNV-1a 32-bit (small deterministic hash for localStorage keys)
+        let hash = 0x811c9dc5;
+        for (let i = 0; i < input.length; i++) {
+            hash ^= input.charCodeAt(i);
+            hash = (hash * 0x01000193) >>> 0;
+        }
+        return hash.toString(16);
+    };
+
+    const getWeatherCacheKey = (city: string, country: string): string => {
+        const normalizedCity = city.trim().toLowerCase();
+        const normalizedCountry = country.trim().toUpperCase();
+        const location = normalizedCountry ? `${normalizedCity},${normalizedCountry}` : normalizedCity;
+
+        return `weather_cache_${hashString(location)}`;
+    };
+
+    interface WeatherCachePayload {
+        savedAt: number;
+        data: WeatherData;
+    }
+
+    const readWeatherCachePayload = (cacheKey: string): WeatherCachePayload | null => {
+        if (typeof window === 'undefined') return null;
+
+        try {
+            const raw = window.localStorage.getItem(cacheKey);
+            if (!raw) return null;
+
+            const parsed = JSON.parse(raw) as WeatherCachePayload;
+            if (!parsed || typeof parsed.savedAt !== 'number' || !parsed.data) return null;
+
+            return parsed;
+        } catch {
+            return null;
+        }
+    };
+
+    const loadWeatherFromCache = (cacheKey: string): WeatherData | null => {
+        const payload = readWeatherCachePayload(cacheKey);
+        if (!payload) return null;
+
+        const isFresh = Date.now() - payload.savedAt < WEATHER_CACHE_TTL_MS;
+        return isFresh ? payload.data : null;
+    };
+
+    const saveWeatherToCache = (cacheKey: string, data: WeatherData): void => {
+        if (typeof window === 'undefined') return;
+
+        const payload: WeatherCachePayload = {
+            savedAt: Date.now(),
+            data,
+        };
+
+        try {
+            window.localStorage.setItem(cacheKey, JSON.stringify(payload));
+        } catch {
+            // If localStorage is unavailable/quota exceeded, we can still function normally.
+        }
+    };
+
+    const persistSelectionToDb = async (city: string, country: string): Promise<void> => {
+        try {
+            await axios.post('/api/weather/selection', {
+                city,
+                country: country.trim() ? country.trim() : null,
+            });
+        } catch (err) {
+            // Weather rendering should not fail if persistence fails.
+            console.error('Failed to persist weather selection:', err);
+        }
+    };
+
     const countryOptions = [
         { code: 'EE', name: 'Estonia' },
         { code: 'FI', name: 'Finland' },
@@ -34,13 +117,45 @@
         error.value = '';
 
         try {
+            const normalizedCity = city.trim();
+            const normalizedCountry = country.trim();
+            const cacheKey = getWeatherCacheKey(normalizedCity, normalizedCountry);
+
+            const cached = loadWeatherFromCache(cacheKey);
+            if (cached) {
+                await persistSelectionToDb(normalizedCity, normalizedCountry);
+                weather.value = cached;
+                return;
+            }
+
             const response = await axios.get('/api/weather', {
-                params: { city, country }
+                params: { city: normalizedCity, country: normalizedCountry },
             });
-            weather.value = response.data;
+
+            weather.value = response.data as WeatherData;
+            if (weather.value) {
+                saveWeatherToCache(cacheKey, weather.value);
+            }
         } catch (err) {
-            error.value = 'Ilmaandmete hankimine ebaõnnestus';
             console.error(err);
+
+            // If the API fails, fall back to stale cached data (if any) instead of leaving the widget blank.
+            try {
+                const normalizedCity = city.trim();
+                const normalizedCountry = country.trim();
+                const cacheKey = getWeatherCacheKey(normalizedCity, normalizedCountry);
+                const payload = readWeatherCachePayload(cacheKey);
+                if (payload?.data) {
+                    await persistSelectionToDb(normalizedCity, normalizedCountry);
+                    weather.value = payload.data;
+                    error.value = '';
+                    return;
+                }
+            } catch {
+                // ignore
+            }
+
+            error.value = 'Ilmaandmete hankimine ebaõnnestus';
         } finally {
             loading.value = false;
         }

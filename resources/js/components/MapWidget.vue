@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import axios from 'axios';
 import L from 'leaflet';
+import { usePage } from '@inertiajs/vue3';
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import 'leaflet/dist/leaflet.css';
 
@@ -29,6 +30,60 @@ const newMarker = ref({
 });
 
 const mapMarkers = ref<any[]>([]);
+
+const MARKERS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const page = usePage<{
+    auth?: { user?: { id?: number } };
+}>();
+
+const authUserId = page.props.auth?.user?.id ?? null;
+const MARKERS_CACHE_KEY = authUserId
+    ? `map_markers_cache_v1_user_${authUserId}`
+    : 'map_markers_cache_v1_guest';
+
+interface MarkersCachePayload {
+    savedAt: number;
+    markers: Marker[];
+}
+
+const readMarkersCachePayload = (): MarkersCachePayload | null => {
+    if (typeof window === 'undefined') return null;
+
+    try {
+        const raw = window.localStorage.getItem(MARKERS_CACHE_KEY);
+        if (!raw) return null;
+
+        const parsed = JSON.parse(raw) as MarkersCachePayload;
+        if (!parsed || typeof parsed.savedAt !== 'number' || !Array.isArray(parsed.markers)) return null;
+
+        return parsed;
+    } catch {
+        return null;
+    }
+};
+
+const loadMarkersFromCache = (): Marker[] | null => {
+    const payload = readMarkersCachePayload();
+    if (!payload) return null;
+
+    const isFresh = Date.now() - payload.savedAt < MARKERS_CACHE_TTL_MS;
+    return isFresh ? payload.markers : null;
+};
+
+const saveMarkersToCache = (markersToSave: Marker[]): void => {
+    if (typeof window === 'undefined') return;
+
+    const payload: MarkersCachePayload = {
+        savedAt: Date.now(),
+        markers: markersToSave,
+    };
+
+    try {
+        window.localStorage.setItem(MARKERS_CACHE_KEY, JSON.stringify(payload));
+    } catch {
+        // Ignore localStorage failures (quota/private mode). Map still works via API.
+    }
+};
 const parseCoordinate = (value: number | string | null | undefined): number | null => {
     if (typeof value === 'number') {
         return Number.isFinite(value) ? value : null;
@@ -106,9 +161,17 @@ const initMap = async () => {
 
 const loadMarkers = async () => {
     try {
+        const cachedMarkers = loadMarkersFromCache();
+        if (cachedMarkers) {
+            markers.value = cachedMarkers;
+            updateMapMarkers();
+        }
+
         const response = await axios.get('/api/markers');
         markers.value = response.data;
         updateMapMarkers();
+
+        saveMarkersToCache(markers.value);
     } catch (error) {
         console.error('Error loading markers:', error);
     }
@@ -239,6 +302,7 @@ const saveMarker = async () => {
         }
 
         updateMapMarkers();
+        saveMarkersToCache(markers.value);
         showForm.value = false;
         formMode.value = 'create';
         editingMarkerId.value = null;
@@ -302,6 +366,7 @@ const confirmDeleteMarker = async (): Promise<void> => {
         await axios.delete(`/api/markers/${deleteTargetMarker.value.id}`);
         markers.value = markers.value.filter((m) => m.id !== deleteTargetMarker.value?.id);
         updateMapMarkers();
+        saveMarkersToCache(markers.value);
         closeDeleteModal();
     } catch (error) {
         console.error('Error deleting marker:', error);
