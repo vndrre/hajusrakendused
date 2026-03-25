@@ -6,9 +6,9 @@
 /public/storage
 /storage/*.key
 /storage/pail
-/resources/js/actions
-/resources/js/routes
-/resources/js/wayfinder
+# Wayfinder generates route/action/type TS files that are required at build time.
+# Some deployment environments (like Vercel) may not have PHP available during `vite build`,
+# so these generated files must be present in the repository (do NOT ignore them).
 /vendor
 .DS_Store
 .env
