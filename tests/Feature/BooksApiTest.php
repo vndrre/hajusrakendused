@@ -3,7 +3,9 @@
 use App\Models\MyFavoriteSubject;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
@@ -11,15 +13,19 @@ test('can create a book via JSON API', function (): void {
     $user = User::factory()->create();
     $this->actingAs($user);
 
+    Storage::fake('public');
+    $bookImage = UploadedFile::fake()->image('dune.jpg', 600, 380);
+
     $bookData = [
         'title' => 'Dune',
-        'image' => 'https://example.com/dune.jpg',
+        'image' => $bookImage,
         'description' => 'A science fiction novel.',
         'author' => 'Frank Herbert',
         'publication_year' => 1965,
     ];
 
-    $response = $this->postJson('/api/books', $bookData);
+    $response = $this->post('/api/books', $bookData);
+    $created = $response->json();
 
     $response->assertStatus(201)
         ->assertJsonFragment([
@@ -30,7 +36,11 @@ test('can create a book via JSON API', function (): void {
 
     $this->assertDatabaseHas('my_favorite_subject', [
         'user_id' => $user->id,
-        ...$bookData,
+        'title' => $bookData['title'],
+        'image' => $created['image'],
+        'description' => $bookData['description'],
+        'author' => $bookData['author'],
+        'publication_year' => $bookData['publication_year'],
     ]);
 });
 
@@ -64,8 +74,8 @@ test('supports search, filtering, sorting, limit and caches responses', function
         'publication_year' => 2001,
     ]);
 
-    // Search + mine filter.
-    $firstResponse = $this->getJson('/api/books?mine=1&q=Dune%20Messiah&limit=10&sort=created_at&direction=desc');
+    // Search + mine filter (q should be case-insensitive).
+    $firstResponse = $this->getJson('/api/books?mine=1&q=dUnE%20mEsSiAh&limit=10&sort=created_at&direction=desc');
     $firstResponse->assertStatus(200)
         ->assertJsonPath('meta.total', 1)
         ->assertJsonPath('meta.cached', false)
@@ -73,7 +83,7 @@ test('supports search, filtering, sorting, limit and caches responses', function
         ->assertJsonPath('data.0.id', $bookB->id);
 
     // Same query again should be cached.
-    $secondResponse = $this->getJson('/api/books?mine=1&q=Dune%20Messiah&limit=10&sort=created_at&direction=desc');
+    $secondResponse = $this->getJson('/api/books?mine=1&q=dUnE%20mEsSiAh&limit=10&sort=created_at&direction=desc');
     $secondResponse->assertStatus(200)
         ->assertJsonPath('meta.cached', true);
 

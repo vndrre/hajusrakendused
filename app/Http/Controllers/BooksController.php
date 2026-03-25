@@ -8,6 +8,7 @@ use App\Models\MyFavoriteSubject;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -34,6 +35,7 @@ class BooksController extends Controller
             default => false,
         };
         $query = (string) ($validated['q'] ?? '');
+        $queryNormalized = function_exists('mb_strtolower') ? mb_strtolower($query, 'UTF-8') : strtolower($query);
         $author = (string) ($validated['author'] ?? '');
         $publicationYear = $validated['publication_year'] ?? null;
         $limit = (int) ($validated['limit'] ?? 20);
@@ -68,7 +70,7 @@ class BooksController extends Controller
         $payload = Cache::remember($cacheKey, now()->addSeconds($cacheTtlSeconds), function () use (
             $request,
             $mine,
-            $query,
+            $queryNormalized,
             $author,
             $publicationYear,
             $limit,
@@ -80,10 +82,12 @@ class BooksController extends Controller
                 ->when($mine, fn ($q) => $q->where('user_id', $request->user()->id))
                 ->when($author !== '', fn ($q) => $q->where('author', 'like', '%'.$author.'%'))
                 ->when($publicationYear !== null, fn ($q) => $q->where('publication_year', $publicationYear))
-                ->when($query !== '', function ($q) use ($query) {
-                    $q->where(function ($inner) use ($query) {
-                        $inner->where('title', 'like', '%'.$query.'%')
-                            ->orWhere('description', 'like', '%'.$query.'%');
+                ->when($queryNormalized !== '', function ($q) use ($queryNormalized) {
+                    $likePattern = '%'.$queryNormalized.'%';
+
+                    $q->where(function ($inner) use ($likePattern) {
+                        $inner->whereRaw('LOWER(title) LIKE ?', [$likePattern])
+                            ->orWhereRaw('LOWER(description) LIKE ?', [$likePattern]);
                     });
                 });
 
@@ -122,10 +126,15 @@ class BooksController extends Controller
     {
         $validated = $request->validated();
 
+        /** @var \Illuminate\Http\UploadedFile $uploadedImage */
+        $uploadedImage = $validated['image'];
+        $imagePath = $uploadedImage->store('books', 'public');
+        $imageUrl = Storage::disk('public')->url($imagePath);
+
         $book = MyFavoriteSubject::query()->create([
             'user_id' => $request->user()->id,
             'title' => $validated['title'],
-            'image' => $validated['image'],
+            'image' => $imageUrl,
             'description' => $validated['description'],
             'author' => $validated['author'],
             'publication_year' => $validated['publication_year'],

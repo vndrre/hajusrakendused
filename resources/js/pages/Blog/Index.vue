@@ -24,9 +24,10 @@ interface Post {
     comments: Comment[];
 }
 
-const { posts, authUser } = defineProps<{
+const { posts, authUser, isAdmin } = defineProps<{
     posts: Post[];
     authUser: User | null;
+    isAdmin: boolean;
 }>();
 
 const createPostForm = useForm({
@@ -130,6 +131,126 @@ const confirmDeleteComment = (): void => {
         },
         onFinish: () => {
             deleteCommentSubmitting.value = false;
+        },
+    });
+};
+
+const editPostForm = useForm({
+    title: '',
+    description: '',
+});
+
+const editPostModalOpen = ref(false);
+const editTargetPostId = ref<number | null>(null);
+const editPostErrorMessage = ref<string | null>(null);
+
+const editTargetPost = computed(() => {
+    if (!editTargetPostId.value) {
+        return null;
+    }
+
+    return posts.find((post) => post.id === editTargetPostId.value) ?? null;
+});
+
+const openEditPostModal = (postId: number): void => {
+    const target = posts.find((post) => post.id === postId) ?? null;
+
+    if (!target) {
+        return;
+    }
+
+    editTargetPostId.value = postId;
+    editPostErrorMessage.value = null;
+    editPostForm.reset();
+    editPostForm.title = target.title;
+    editPostForm.description = target.description;
+    editPostModalOpen.value = true;
+};
+
+const closeEditPostModal = (): void => {
+    editPostModalOpen.value = false;
+    editTargetPostId.value = null;
+    editPostErrorMessage.value = null;
+    editPostForm.reset();
+};
+
+const confirmEditPost = (): void => {
+    if (!editTargetPostId.value) {
+        return;
+    }
+
+    editPostErrorMessage.value = null;
+
+    editPostForm.put(`/blog/${editTargetPostId.value}`, {
+        preserveScroll: true,
+        onSuccess: () => closeEditPostModal(),
+        onError: () => {
+            editPostErrorMessage.value = 'Failed to update the post.';
+        },
+    });
+};
+
+const editCommentForm = useForm({
+    body: '',
+});
+
+const editCommentModalOpen = ref(false);
+const editTargetCommentId = ref<number | null>(null);
+const editCommentErrorMessage = ref<string | null>(null);
+
+const getCommentById = (commentId: number): Comment | null => {
+    for (const post of posts) {
+        const found = post.comments.find((comment) => comment.id === commentId);
+
+        if (found) {
+            return found;
+        }
+    }
+
+    return null;
+};
+
+const editTargetComment = computed(() => {
+    if (!editTargetCommentId.value) {
+        return null;
+    }
+
+    return getCommentById(editTargetCommentId.value);
+});
+
+const openEditCommentModal = (commentId: number): void => {
+    const target = getCommentById(commentId);
+
+    if (!target) {
+        return;
+    }
+
+    editTargetCommentId.value = commentId;
+    editCommentErrorMessage.value = null;
+    editCommentForm.reset();
+    editCommentForm.body = target.body;
+    editCommentModalOpen.value = true;
+};
+
+const closeEditCommentModal = (): void => {
+    editCommentModalOpen.value = false;
+    editTargetCommentId.value = null;
+    editCommentErrorMessage.value = null;
+    editCommentForm.reset();
+};
+
+const confirmEditComment = (): void => {
+    if (!editTargetCommentId.value) {
+        return;
+    }
+
+    editCommentErrorMessage.value = null;
+
+    editCommentForm.put(`/comments/${editTargetCommentId.value}`, {
+        preserveScroll: true,
+        onSuccess: () => closeEditCommentModal(),
+        onError: () => {
+            editCommentErrorMessage.value = 'Failed to update the comment.';
         },
     });
 };
@@ -241,12 +362,18 @@ const getCommentForm = (postId: number) => {
                                                 <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ new Date(post.created_at).toLocaleString() }}</span>
                                             </div>
                                             <div
-                                                v-if="
-                                                    authUser
-                                                    && Number(authUser.id) === Number(post.user.id)
-                                                "
+                                v-if="authUser && (isAdmin || Number(authUser.id) === Number(post.user.id))"
                                                 class="flex gap-2 text-xs"
                                             >
+                                <button
+                                    v-if="Number(authUser.id) === Number(post.user.id)"
+                                    type="button"
+                                    @click="openEditPostModal(post.id)"
+                                    class="rounded-md cursor-pointer px-2 py-1 text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-950/30"
+                                >
+                                    Edit
+                                </button>
+
                                                 <button
                                                     type="button"
                                                     @click="openDeleteModal(post.id)"
@@ -278,12 +405,20 @@ const getCommentForm = (postId: number) => {
                                         </div>
 
                                         <div
-                                            v-if="
-                                                authUser
-                                                && Number(authUser.id) === Number(comment.user.id)
-                                            "
+                                            v-if="authUser && (isAdmin || Number(authUser.id) === Number(comment.user.id))"
                                             class="ml-2 shrink-0 text-xs"
                                         >
+                                            <button
+                                                v-if="
+                                                    Number(authUser.id) === Number(comment.user.id)
+                                                "
+                                                type="button"
+                                                @click="openEditCommentModal(comment.id)"
+                                                class="mb-1 block w-full rounded-md cursor-pointer px-2 py-1 text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-950/30"
+                                            >
+                                                Edit
+                                            </button>
+
                                             <button
                                                 type="button"
                                                 @click="openDeleteCommentModal(comment.id)"
@@ -325,6 +460,175 @@ const getCommentForm = (postId: number) => {
                                 </div>
                             </article>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Edit post modal (allows updating title/description) -->
+            <div
+                v-if="editPostModalOpen"
+                class="fixed inset-0 z-[10000] flex items-center justify-center"
+                role="dialog"
+                aria-modal="true"
+            >
+                <div
+                    class="absolute inset-0 z-[10000] bg-black/60"
+                    @click="closeEditPostModal"
+                ></div>
+
+                <div
+                    class="relative z-[10001] w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+                >
+                    <h3 class="mb-2 text-lg font-semibold text-zinc-900 dark:text-white">
+                        Edit post
+                    </h3>
+
+                    <div class="space-y-3">
+                        <div>
+                            <label
+                                class="mb-1 block text-xs font-semibold text-zinc-700 dark:text-zinc-300"
+                                for="edit-post-title"
+                            >
+                                Title
+                            </label>
+                            <input
+                                id="edit-post-title"
+                                v-model="editPostForm.title"
+                                type="text"
+                                class="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                            />
+                            <p
+                                v-if="editPostForm.errors.title"
+                                class="mt-1 text-xs text-red-600 dark:text-red-400"
+                            >
+                                {{ editPostForm.errors.title }}
+                            </p>
+                        </div>
+
+                        <div>
+                            <label
+                                class="mb-1 block text-xs font-semibold text-zinc-700 dark:text-zinc-300"
+                                for="edit-post-description"
+                            >
+                                Description
+                            </label>
+                            <textarea
+                                id="edit-post-description"
+                                v-model="editPostForm.description"
+                                rows="3"
+                                class="w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                            />
+                            <p
+                                v-if="editPostForm.errors.description"
+                                class="mt-1 text-xs text-red-600 dark:text-red-400"
+                            >
+                                {{ editPostForm.errors.description }}
+                            </p>
+                        </div>
+
+                        <p
+                            v-if="editPostErrorMessage"
+                            class="text-sm font-medium text-red-600 dark:text-red-400"
+                        >
+                            {{ editPostErrorMessage }}
+                        </p>
+                    </div>
+
+                    <div class="mt-5 flex gap-2">
+                        <button
+                            type="button"
+                            @click="closeEditPostModal"
+                            :disabled="editPostForm.processing"
+                            class="flex-1 rounded-xl bg-zinc-200 px-4 py-2 text-zinc-900 transition hover:bg-zinc-300 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                        >
+                            Cancel
+                        </button>
+
+                        <button
+                            type="button"
+                            @click="confirmEditPost"
+                            :disabled="editPostForm.processing"
+                            class="flex-1 rounded-xl bg-black px-4 py-2 text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                        >
+                            {{
+                                editPostForm.processing ? 'Saving...' : 'Save'
+                            }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Edit comment modal (allows updating comment body) -->
+            <div
+                v-if="editCommentModalOpen"
+                class="fixed inset-0 z-[10000] flex items-center justify-center"
+                role="dialog"
+                aria-modal="true"
+            >
+                <div
+                    class="absolute inset-0 z-[10000] bg-black/60"
+                    @click="closeEditCommentModal"
+                ></div>
+
+                <div
+                    class="relative z-[10001] w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+                >
+                    <h3 class="mb-2 text-lg font-semibold text-zinc-900 dark:text-white">
+                        Edit comment
+                    </h3>
+
+                    <div class="space-y-3">
+                        <div>
+                            <label
+                                class="mb-1 block text-xs font-semibold text-zinc-700 dark:text-zinc-300"
+                                for="edit-comment-body"
+                            >
+                                Comment
+                            </label>
+                            <textarea
+                                id="edit-comment-body"
+                                v-model="editCommentForm.body"
+                                rows="3"
+                                class="w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                            />
+                            <p
+                                v-if="editCommentForm.errors.body"
+                                class="mt-1 text-xs text-red-600 dark:text-red-400"
+                            >
+                                {{ editCommentForm.errors.body }}
+                            </p>
+                        </div>
+
+                        <p
+                            v-if="editCommentErrorMessage"
+                            class="text-sm font-medium text-red-600 dark:text-red-400"
+                        >
+                            {{ editCommentErrorMessage }}
+                        </p>
+                    </div>
+
+                    <div class="mt-5 flex gap-2">
+                        <button
+                            type="button"
+                            @click="closeEditCommentModal"
+                            :disabled="editCommentForm.processing"
+                            class="flex-1 rounded-xl bg-zinc-200 px-4 py-2 text-zinc-900 transition hover:bg-zinc-300 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                        >
+                            Cancel
+                        </button>
+
+                        <button
+                            type="button"
+                            @click="confirmEditComment"
+                            :disabled="editCommentForm.processing"
+                            class="flex-1 rounded-xl bg-black px-4 py-2 text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                        >
+                            {{
+                                editCommentForm.processing
+                                    ? 'Saving...'
+                                    : 'Save'
+                            }}
+                        </button>
                     </div>
                 </div>
             </div>

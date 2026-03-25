@@ -18,6 +18,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'api/markers',
             'api/markers/*',
+            'api/books',
+            'api/books/*',
         ]);
 
         $middleware->web(append: [

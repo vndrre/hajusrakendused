@@ -9,6 +9,17 @@ use Inertia\Response;
 
 class PostController extends Controller
 {
+    private function isAdmin(Request $request): bool
+    {
+        $email = $request->user()?->email;
+
+        if (! is_string($email)) {
+            return false;
+        }
+
+        return strtolower(trim($email)) === strtolower('admin@test.com');
+    }
+
     public function index(Request $request): Response
     {
         $posts = Post::query()
@@ -21,6 +32,7 @@ class PostController extends Controller
             'authUser' => $request->user()
                 ? $request->user()->only(['id', 'name'])
                 : null,
+            'isAdmin' => $this->isAdmin($request),
         ]);
     }
 
@@ -54,7 +66,9 @@ class PostController extends Controller
 
     public function destroy(Request $request, Post $post): \Symfony\Component\HttpFoundation\Response
     {
-        if ($request->user()->id !== $post->user_id) {
+        $user = $request->user();
+
+        if (! $this->isAdmin($request) && $user?->id !== $post->user_id) {
             abort(403);
         }
 
