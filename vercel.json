@@ -7,6 +7,10 @@
   },
   "outputDirectory": "public/build",
   "routes": [
+    {
+      "src": "/(.*\\.(?:css|js|mjs|cjs|json|map|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|otf|eot|txt))",
+      "dest": "/public/$1"
+    },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/api/index.php" }
   ]
