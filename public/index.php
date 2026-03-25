@@ -42,7 +42,11 @@ if (isset($_SERVER['VERCEL']) || getenv('VERCEL') !== false) {
 
     $host = $_SERVER['HTTP_HOST'] ?? getenv('VERCEL_URL') ?: null;
     if (is_string($host) && $host !== '') {
-        $app['config']->set('app.url', 'https://'.$host);
+        // In early bootstrap (Vercel entrypoint), some bindings may not be ready yet.
+        // Only attempt to update `app.url` if the config repository is bound.
+        if ($app->bound('config')) {
+            $app['config']->set('app.url', 'https://'.$host);
+        }
     }
 }
 
