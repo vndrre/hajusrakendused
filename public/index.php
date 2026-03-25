@@ -50,12 +50,19 @@ if (isset($_SERVER['VERCEL']) || getenv('VERCEL') !== false) {
     $app->useStoragePath($storagePath);
     $app->useBootstrapPath($bootstrapPath);
 
-    // Vercel runs behind HTTPS, but the incoming request scheme can be interpreted
-    // as HTTP unless we explicitly force it. This prevents mixed-content asset URLs.
+    // Vercel runs behind HTTPS, but Laravel/Symfony can still infer the incoming
+    // scheme as HTTP depending on proxy headers/trust settings.
+    // Force server/proxy values to make `url()` / `asset()` generate `https://...`.
+    $_SERVER['HTTPS'] = 'on';
+    $_SERVER['SERVER_PORT'] = 443;
+    $_SERVER['REQUEST_SCHEME'] = 'https';
+    $_SERVER['HTTP_X_FORWARDED_PROTO'] = 'https';
+
+    // Best-effort: also force the URL generator (only if its binding is available).
     try {
         $app->make('url')->forceScheme('https');
     } catch (Throwable $e) {
-        // If URL generator binding isn't available for some reason, don't crash early.
+        // Don't crash early.
     }
 }
 
