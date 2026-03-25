@@ -21,7 +21,12 @@ export default defineConfig({
             },
         }),
         wayfinder({
-            formVariants: true,
+            // Vercel build containers often don't have `php` available, but our Wayfinder types
+            // are already checked into the repo. Skip regeneration on Vercel.
+            routes: process.env.VERCEL !== '1' && process.env.VERCEL !== 'true',
+            actions: process.env.VERCEL !== '1' && process.env.VERCEL !== 'true',
+            formVariants:
+                process.env.VERCEL !== '1' && process.env.VERCEL !== 'true',
         }),
     ],
 });
