@@ -13,6 +13,21 @@ if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php'))
 // Register the Composer autoloader...
 require __DIR__.'/../vendor/autoload.php';
 
+// Vercel runs behind HTTPS. Laravel reads `APP_URL` during bootstrap/config loading,
+// so set it before requiring `bootstrap/app.php` to avoid generating HTTP asset URLs.
+if (isset($_SERVER['VERCEL']) || getenv('VERCEL') !== false) {
+    $host = $_SERVER['HTTP_HOST'] ?? getenv('VERCEL_URL') ?: null;
+    if (is_string($host) && $host !== '') {
+        $httpsUrl = 'https://'.$host;
+        $appUrl = (string) getenv('APP_URL');
+        if ($appUrl === '' || str_starts_with($appUrl, 'http://')) {
+            putenv('APP_URL='.$httpsUrl);
+            $_ENV['APP_URL'] = $httpsUrl;
+            $_SERVER['APP_URL'] = $httpsUrl;
+        }
+    }
+}
+
 // Bootstrap Laravel and handle the request...
 /** @var Application $app */
 $app = require_once __DIR__.'/../bootstrap/app.php';
@@ -35,21 +50,6 @@ if (isset($_SERVER['VERCEL']) || getenv('VERCEL') !== false) {
     $app->useStoragePath($storagePath);
     $app->useBootstrapPath($bootstrapPath);
 
-    $host = $_SERVER['HTTP_HOST'] ?? getenv('VERCEL_URL') ?: null;
-    if (is_string($host) && $host !== '') {
-        // Ensure Laravel generates `https://...` URLs.
-        //
-        // Note: do NOT touch container bindings (like `url` or `config`) here;
-        // on Vercel this file runs before some bindings are registered.
-        // Updating env vars is safe and will be picked up when config loads.
-        $httpsUrl = 'https://'.$host;
-        $appUrl = (string) getenv('APP_URL');
-        if ($appUrl === '' || str_starts_with($appUrl, 'http://')) {
-            putenv('APP_URL='.$httpsUrl);
-            $_ENV['APP_URL'] = $httpsUrl;
-            $_SERVER['APP_URL'] = $httpsUrl;
-        }
-    }
 }
 
 $app->handleRequest(Request::capture());
