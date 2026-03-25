@@ -38,11 +38,11 @@ if (isset($_SERVER['VERCEL']) || getenv('VERCEL') !== false) {
     // Ensure Laravel generates `https://...` URLs (Vercel runs behind HTTPS).
     // This prevents "Mixed Content" warnings when the environment accidentally
     // sets APP_URL to `http://...`.
-    \Illuminate\Support\Facades\URL::forceScheme('https');
+    $app->make('url')->forceScheme('https');
 
     $host = $_SERVER['HTTP_HOST'] ?? getenv('VERCEL_URL') ?: null;
     if (is_string($host) && $host !== '') {
-        \Illuminate\Support\Facades\Config::set('app.url', 'https://'.$host);
+        $app['config']->set('app.url', 'https://'.$host);
     }
 }
 
