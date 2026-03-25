@@ -50,6 +50,13 @@ if (isset($_SERVER['VERCEL']) || getenv('VERCEL') !== false) {
     $app->useStoragePath($storagePath);
     $app->useBootstrapPath($bootstrapPath);
 
+    // Vercel runs behind HTTPS, but the incoming request scheme can be interpreted
+    // as HTTP unless we explicitly force it. This prevents mixed-content asset URLs.
+    try {
+        $app->make('url')->forceScheme('https');
+    } catch (Throwable $e) {
+        // If URL generator binding isn't available for some reason, don't crash early.
+    }
 }
 
 $app->handleRequest(Request::capture());
