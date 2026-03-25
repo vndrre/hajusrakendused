@@ -35,17 +35,19 @@ if (isset($_SERVER['VERCEL']) || getenv('VERCEL') !== false) {
     $app->useStoragePath($storagePath);
     $app->useBootstrapPath($bootstrapPath);
 
-    // Ensure Laravel generates `https://...` URLs (Vercel runs behind HTTPS).
-    // This prevents "Mixed Content" warnings when the environment accidentally
-    // sets APP_URL to `http://...`.
-    $app->make('url')->forceScheme('https');
-
     $host = $_SERVER['HTTP_HOST'] ?? getenv('VERCEL_URL') ?: null;
     if (is_string($host) && $host !== '') {
-        // In early bootstrap (Vercel entrypoint), some bindings may not be ready yet.
-        // Only attempt to update `app.url` if the config repository is bound.
-        if ($app->bound('config')) {
-            $app['config']->set('app.url', 'https://'.$host);
+        // Ensure Laravel generates `https://...` URLs.
+        //
+        // Note: do NOT touch container bindings (like `url` or `config`) here;
+        // on Vercel this file runs before some bindings are registered.
+        // Updating env vars is safe and will be picked up when config loads.
+        $httpsUrl = 'https://'.$host;
+        $appUrl = (string) getenv('APP_URL');
+        if ($appUrl === '' || str_starts_with($appUrl, 'http://')) {
+            putenv('APP_URL='.$httpsUrl);
+            $_ENV['APP_URL'] = $httpsUrl;
+            $_SERVER['APP_URL'] = $httpsUrl;
         }
     }
 }
