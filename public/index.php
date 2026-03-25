@@ -17,4 +17,23 @@ require __DIR__.'/../vendor/autoload.php';
 /** @var Application $app */
 $app = require_once __DIR__.'/../bootstrap/app.php';
 
+// Vercel's filesystem is mostly read-only (e.g. /var/task). Laravel still expects
+// `storage/` and `bootstrap/cache/` to be writable, so redirect them to /tmp.
+if (isset($_SERVER['VERCEL']) || getenv('VERCEL') !== false) {
+    $tmpRoot = '/tmp/laravel';
+    $storagePath = $tmpRoot.'/storage';
+    $bootstrapPath = $tmpRoot.'/bootstrap';
+
+    // Ensure Laravel's common writable directories exist.
+    @mkdir($storagePath.'/logs', 0777, true);
+    @mkdir($storagePath.'/framework/cache', 0777, true);
+    @mkdir($storagePath.'/framework/sessions', 0777, true);
+    @mkdir($storagePath.'/framework/views', 0777, true);
+    @mkdir($storagePath.'/app', 0777, true);
+    @mkdir($bootstrapPath.'/cache', 0777, true);
+
+    $app->useStoragePath($storagePath);
+    $app->useBootstrapPath($bootstrapPath);
+}
+
 $app->handleRequest(Request::capture());
