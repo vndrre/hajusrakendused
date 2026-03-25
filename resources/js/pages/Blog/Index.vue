@@ -144,14 +144,6 @@ const editPostModalOpen = ref(false);
 const editTargetPostId = ref<number | null>(null);
 const editPostErrorMessage = ref<string | null>(null);
 
-const editTargetPost = computed(() => {
-    if (!editTargetPostId.value) {
-        return null;
-    }
-
-    return posts.find((post) => post.id === editTargetPostId.value) ?? null;
-});
-
 const openEditPostModal = (postId: number): void => {
     const target = posts.find((post) => post.id === postId) ?? null;
 
@@ -209,14 +201,6 @@ const getCommentById = (commentId: number): Comment | null => {
 
     return null;
 };
-
-const editTargetComment = computed(() => {
-    if (!editTargetCommentId.value) {
-        return null;
-    }
-
-    return getCommentById(editTargetCommentId.value);
-});
 
 const openEditCommentModal = (commentId: number): void => {
     const target = getCommentById(commentId);

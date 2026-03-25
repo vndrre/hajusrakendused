@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import L from 'leaflet';
-import { usePage } from '@inertiajs/vue3';
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import 'leaflet/dist/leaflet.css';
 

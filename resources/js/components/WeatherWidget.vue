@@ -1,6 +1,6 @@
 <script setup lang="ts">
-    import axios from 'axios';
     import { usePage } from '@inertiajs/vue3';
+    import axios from 'axios';
     import { onMounted, ref } from 'vue';
 
     interface WeatherData {
