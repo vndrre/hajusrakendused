@@ -48,6 +48,33 @@
         data: WeatherData;
     }
 
+    const isWeatherData = (value: unknown): value is WeatherData => {
+        if (!value || typeof value !== 'object') {
+            return false;
+        }
+
+        const candidate = value as Partial<WeatherData> & {
+            weather?: Array<{ icon?: unknown; description?: unknown }>;
+            main?: { temp?: unknown; feels_like?: unknown; humidity?: unknown };
+            wind?: { speed?: unknown };
+        };
+
+        const firstWeather = candidate.weather?.[0];
+
+        return (
+            typeof candidate.name === 'string' &&
+            typeof candidate.sys?.country === 'string' &&
+            Array.isArray(candidate.weather) &&
+            candidate.weather.length > 0 &&
+            typeof firstWeather?.icon === 'string' &&
+            typeof firstWeather?.description === 'string' &&
+            typeof candidate.main?.temp === 'number' &&
+            typeof candidate.main?.feels_like === 'number' &&
+            typeof candidate.main?.humidity === 'number' &&
+            typeof candidate.wind?.speed === 'number'
+        );
+    };
+
     const readWeatherCachePayload = (cacheKey: string): WeatherCachePayload | null => {
         if (typeof window === 'undefined') return null;
 
@@ -56,7 +83,7 @@
             if (!raw) return null;
 
             const parsed = JSON.parse(raw) as WeatherCachePayload;
-            if (!parsed || typeof parsed.savedAt !== 'number' || !parsed.data) return null;
+            if (!parsed || typeof parsed.savedAt !== 'number' || !isWeatherData(parsed.data)) return null;
 
             return parsed;
         } catch {
@@ -124,7 +151,12 @@
             const cached = loadWeatherFromCache(cacheKey);
             if (cached) {
                 await persistSelectionToDb(normalizedCity, normalizedCountry);
-                weather.value = cached;
+                weather.value = isWeatherData(cached) ? cached : null;
+
+                if (!weather.value) {
+                    error.value = 'Ilmaandmete hankimine ebaõnnestus';
+                }
+
                 return;
             }
 
@@ -132,9 +164,11 @@
                 params: { city: normalizedCity, country: normalizedCountry },
             });
 
-            weather.value = response.data as WeatherData;
+            weather.value = isWeatherData(response.data) ? response.data : null;
             if (weather.value) {
                 saveWeatherToCache(cacheKey, weather.value);
+            } else {
+                error.value = 'Ilmaandmete hankimine ebaõnnestus';
             }
         } catch (err) {
             console.error(err);
@@ -145,7 +179,7 @@
                 const normalizedCountry = country.trim();
                 const cacheKey = getWeatherCacheKey(normalizedCity, normalizedCountry);
                 const payload = readWeatherCachePayload(cacheKey);
-                if (payload?.data) {
+                if (payload?.data && isWeatherData(payload.data)) {
                     await persistSelectionToDb(normalizedCity, normalizedCountry);
                     weather.value = payload.data;
                     error.value = '';

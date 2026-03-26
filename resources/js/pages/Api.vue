@@ -145,7 +145,7 @@ const fetchBooks = async (): Promise<void> => {
 
 const bookImagePlaceholder = computed(() => {
     // Use a deterministic placeholder so layout is stable.
-    return 'https://via.placeholder.com/600x380?text=No+Image';
+    return 'https://placehold.co/600x380?text=No+Image';
 });
 
 const isMine = (book: Book): boolean => {
